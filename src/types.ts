@@ -25,9 +25,16 @@ export type TypeTypeMseConfig = {
   manifestRefreshMs?: number;
 };
 
+export type TypeTypeMseQuality = {
+  videoItag: number;
+  audioItag?: number;
+  audioTrackId?: string | null;
+};
+
 export type TypeTypeMseEvent =
   | { type: "state"; state: TypeTypeMseState }
   | { type: "manifest"; generation: number | null; segmentCount: number }
+  | { type: "quality"; videoItag: number; audioItag: number | null }
   | { type: "segment"; kind: TrackKind; url: string; startMs: number; durationMs: number }
   | { type: "buffer"; bufferedEndMs: number; currentTimeMs: number }
   | { type: "seek"; positionMs: number }

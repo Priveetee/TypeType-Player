@@ -38,6 +38,8 @@ const engine = new TypeTypeMsePlayer(videoElement, {
 engine.on("state", (event) => console.log(event.state));
 await engine.load();
 await engine.play();
+
+await engine.setQuality({ videoItag: 248 });
 ```
 
 ## Diagnostics

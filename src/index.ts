@@ -6,5 +6,6 @@ export type {
   TypeTypeMseEvent,
   TypeTypeMseEventType,
   TypeTypeMseListener,
+  TypeTypeMseQuality,
   TypeTypeMseState,
 } from "./types";

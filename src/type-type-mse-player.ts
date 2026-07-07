@@ -1,29 +1,19 @@
-import { resolveBufferPolicy } from "./buffer-policy";
 import { EventEmitter } from "./event-emitter";
-import { HttpClient } from "./http-client";
-import { MediaElementObserver } from "./media-element-observer";
-import { MediaSourceController } from "./media-source-controller";
-import { PlaybackClient } from "./playback-client";
-import { PlaybackLoop } from "./playback-loop";
+import { createPlayerDeps, type PlayerDeps } from "./player-deps";
 import { bufferedEndMs, createSnapshot, type TypeTypeMseSnapshot } from "./player-snapshot";
 import { SeekController } from "./seek-controller";
-import { SegmentScheduler } from "./segment-scheduler";
 import { type LoadedSession, loadPlaybackSession } from "./session-loader";
 import type {
   TypeTypeMseConfig,
   TypeTypeMseEventType,
   TypeTypeMseListener,
+  TypeTypeMseQuality,
   TypeTypeMseState,
 } from "./types";
 
 export class TypeTypeMsePlayer {
   private readonly emitter = new EventEmitter();
-  private readonly http: HttpClient;
-  private readonly playback: PlaybackClient;
-  private readonly mediaEvents: MediaElementObserver;
-  private readonly media: MediaSourceController;
-  private readonly scheduler: SegmentScheduler;
-  private readonly loop: PlaybackLoop;
+  private readonly deps: PlayerDeps;
   private readonly seekController = new SeekController();
   private session: LoadedSession | null = null;
   private operation = new AbortController();
@@ -35,32 +25,16 @@ export class TypeTypeMsePlayer {
     private readonly video: HTMLVideoElement,
     private readonly config: TypeTypeMseConfig,
   ) {
-    this.http = new HttpClient(
-      config.headers
-        ? { endpoint: config.endpoint, headers: config.headers }
-        : { endpoint: config.endpoint },
-    );
-    this.playback = new PlaybackClient(this.http);
-    this.mediaEvents = new MediaElementObserver({
+    this.deps = createPlayerDeps({
       video,
+      config,
+      emitter: this.emitter,
+      session: () => this.session,
+      signal: () => this.operation.signal,
       state: (state) => this.setState(state),
       error: (error) => this.handleError(error),
     });
-    this.mediaEvents.start();
-    this.media = new MediaSourceController(video);
-    this.scheduler = new SegmentScheduler(this.http, this.media, this.emitter);
-    this.loop = new PlaybackLoop({
-      video,
-      http: this.http,
-      media: this.media,
-      scheduler: this.scheduler,
-      emitter: this.emitter,
-      policy: resolveBufferPolicy(config),
-      session: () => this.session,
-      signal: () => this.operation.signal,
-      bufferedEndMs: () => bufferedEndMs(this.video),
-      error: (error) => this.handleError(error),
-    });
+    this.deps.mediaEvents.start();
   }
 
   on(type: TypeTypeMseEventType, listener: TypeTypeMseListener): () => void {
@@ -73,7 +47,7 @@ export class TypeTypeMsePlayer {
     const signal = this.operation.signal;
     this.setState("loading");
     const startTimeMs = Math.max(0, Math.round(this.config.startTimeMs ?? 0));
-    const response = await this.playback.create(
+    const response = await this.deps.playback.create(
       {
         videoId: this.config.videoId,
         videoItag: this.config.videoItag,
@@ -102,6 +76,13 @@ export class TypeTypeMsePlayer {
     return this.seekController.seek(positionMs, (targetMs) => this.performSeek(targetMs));
   }
 
+  async setQuality(quality: TypeTypeMseQuality): Promise<void> {
+    this.operation.abort();
+    return this.seekController.seek(this.currentTimeMs(), (targetMs) =>
+      this.performSeek(targetMs, quality),
+    );
+  }
+
   snapshot(): TypeTypeMseSnapshot {
     return createSnapshot(this.video, this.state, this.session, bufferedEndMs(this.video));
   }
@@ -111,25 +92,37 @@ export class TypeTypeMsePlayer {
     this.destroyed = true;
     this.operation.abort();
     this.seekController.reset();
-    this.loop.stop();
-    this.mediaEvents.stop();
-    this.media.detach();
+    this.deps.loop.stop();
+    this.deps.mediaEvents.stop();
+    this.deps.media.detach();
     this.emitter.clear();
     this.state = "destroyed";
   }
 
-  private async performSeek(positionMs: number): Promise<void> {
+  private async performSeek(positionMs: number, quality?: TypeTypeMseQuality): Promise<void> {
     this.ensureAlive();
     const current = this.session;
     if (!current) throw new Error("Player is not loaded");
     const revision = this.nextRevision();
     const signal = this.operation.signal;
     const targetMs = Math.max(0, Math.round(positionMs));
-    this.loop.stop();
+    this.deps.loop.stop();
     this.setState("seeking");
     this.emitter.emit({ type: "seek", positionMs: targetMs });
-    const response = await this.playback.seek(current.response.sessionId, targetMs, signal);
+    const response = await this.deps.playback.seek(
+      current.response.sessionId,
+      targetMs,
+      quality,
+      signal,
+    );
     await this.switchSession(response, targetMs, revision, signal);
+    if (quality) {
+      this.emitter.emit({
+        type: "quality",
+        videoItag: quality.videoItag,
+        audioItag: quality.audioItag ?? null,
+      });
+    }
   }
 
   private async switchSession(
@@ -139,10 +132,10 @@ export class TypeTypeMsePlayer {
     signal: AbortSignal,
   ): Promise<void> {
     const session = await loadPlaybackSession({
-      http: this.http,
-      playback: this.playback,
-      media: this.media,
-      scheduler: this.scheduler,
+      http: this.deps.http,
+      playback: this.deps.playback,
+      media: this.deps.media,
+      scheduler: this.deps.scheduler,
       video: this.video,
       response,
       startTimeMs,
@@ -150,8 +143,8 @@ export class TypeTypeMsePlayer {
     });
     if (!this.isCurrent(revision)) return;
     this.session = session;
-    await this.loop.fillOnce();
-    this.loop.start();
+    await this.deps.loop.fillOnce();
+    this.deps.loop.start();
     this.emitter.emit({
       type: "manifest",
       generation: response.generation,
@@ -174,6 +167,10 @@ export class TypeTypeMsePlayer {
 
   private ensureAlive(): void {
     if (this.destroyed) throw new Error("Player is destroyed");
+  }
+
+  private currentTimeMs(): number {
+    return Math.max(0, Math.round(this.video.currentTime * 1000));
   }
 
   private nextRevision(): number {

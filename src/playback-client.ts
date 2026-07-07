@@ -17,6 +17,12 @@ export type CreatePlaybackRequest = {
   startTimeMs: number;
 };
 
+export type SeekPlaybackOptions = {
+  videoItag?: number;
+  audioItag?: number;
+  audioTrackId?: string | null;
+};
+
 function field(value: object, key: string): unknown {
   return Reflect.get(value, key);
 }
@@ -65,12 +71,16 @@ export class PlaybackClient {
   async seek(
     sessionId: string,
     positionMs: number,
+    options: SeekPlaybackOptions = {},
     signal?: AbortSignal,
   ): Promise<PlaybackResponse> {
     const session = encodeURIComponent(sessionId);
     const params = new URLSearchParams({
       playerTimeMs: String(Math.max(0, Math.round(positionMs))),
     });
+    if (options.videoItag) params.set("videoItag", String(options.videoItag));
+    if (options.audioItag) params.set("audioItag", String(options.audioItag));
+    if (options.audioTrackId) params.set("audioTrackId", options.audioTrackId);
     const init = signal ? { method: "POST", signal } : { method: "POST" };
     const response = await this.http.json(`/sabr/playback/${session}/seek?${params}`, init);
     return parsePlaybackResponse(response);
