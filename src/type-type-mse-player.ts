@@ -1,10 +1,11 @@
 import { resolveBufferPolicy } from "./buffer-policy";
 import { EventEmitter } from "./event-emitter";
 import { HttpClient } from "./http-client";
+import { MediaElementObserver } from "./media-element-observer";
 import { MediaSourceController } from "./media-source-controller";
 import { PlaybackClient } from "./playback-client";
 import { PlaybackLoop } from "./playback-loop";
-import { createSnapshot, type TypeTypeMseSnapshot } from "./player-snapshot";
+import { bufferedEndMs, createSnapshot, type TypeTypeMseSnapshot } from "./player-snapshot";
 import { SeekController } from "./seek-controller";
 import { SegmentScheduler } from "./segment-scheduler";
 import { type LoadedSession, loadPlaybackSession } from "./session-loader";
@@ -19,6 +20,7 @@ export class TypeTypeMsePlayer {
   private readonly emitter = new EventEmitter();
   private readonly http: HttpClient;
   private readonly playback: PlaybackClient;
+  private readonly mediaEvents: MediaElementObserver;
   private readonly media: MediaSourceController;
   private readonly scheduler: SegmentScheduler;
   private readonly loop: PlaybackLoop;
@@ -39,6 +41,12 @@ export class TypeTypeMsePlayer {
         : { endpoint: config.endpoint },
     );
     this.playback = new PlaybackClient(this.http);
+    this.mediaEvents = new MediaElementObserver({
+      video,
+      state: (state) => this.setState(state),
+      error: (error) => this.handleError(error),
+    });
+    this.mediaEvents.start();
     this.media = new MediaSourceController(video);
     this.scheduler = new SegmentScheduler(this.http, this.media, this.emitter);
     this.loop = new PlaybackLoop({
@@ -50,7 +58,7 @@ export class TypeTypeMsePlayer {
       policy: resolveBufferPolicy(config),
       session: () => this.session,
       signal: () => this.operation.signal,
-      bufferedEndMs: () => this.bufferedEndMs(),
+      bufferedEndMs: () => bufferedEndMs(this.video),
       error: (error) => this.handleError(error),
     });
   }
@@ -95,7 +103,7 @@ export class TypeTypeMsePlayer {
   }
 
   snapshot(): TypeTypeMseSnapshot {
-    return createSnapshot(this.video, this.state, this.session, this.bufferedEndMs());
+    return createSnapshot(this.video, this.state, this.session, bufferedEndMs(this.video));
   }
 
   destroy(): void {
@@ -104,6 +112,7 @@ export class TypeTypeMsePlayer {
     this.operation.abort();
     this.seekController.reset();
     this.loop.stop();
+    this.mediaEvents.stop();
     this.media.detach();
     this.emitter.clear();
     this.state = "destroyed";
@@ -149,12 +158,6 @@ export class TypeTypeMsePlayer {
       segmentCount: session.manifest.audio.segments.length + session.manifest.video.segments.length,
     });
     this.setState("ready");
-  }
-
-  private bufferedEndMs(): number {
-    const buffered = this.video.buffered;
-    if (buffered.length === 0) return 0;
-    return Math.round(buffered.end(buffered.length - 1) * 1000);
   }
 
   private setState(state: TypeTypeMseState): void {

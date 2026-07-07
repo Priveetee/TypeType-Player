@@ -2,6 +2,7 @@ import type { EventEmitter } from "./event-emitter";
 import type { HttpClient } from "./http-client";
 import type { ManifestSegment, PlaybackManifest } from "./manifest";
 import type { MediaSourceController } from "./media-source-controller";
+import { fetchSegmentBytes } from "./segment-fetcher";
 import type { TrackKind } from "./types";
 
 export class SegmentScheduler {
@@ -61,7 +62,7 @@ export class SegmentScheduler {
     if (signal?.aborted) throw new DOMException("Operation aborted", "AbortError");
     const key = `${kind}:${url}`;
     if (this.appended.has(key)) return;
-    const bytes = await this.http.bytes(url, signal ? { signal } : undefined);
+    const bytes = await fetchSegmentBytes(this.http, url, signal);
     await this.media.append(kind, bytes);
     this.appended.add(key);
     this.emitter.emit({ type: "segment", kind, url, startMs, durationMs });

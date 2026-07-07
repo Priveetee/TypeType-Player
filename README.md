@@ -13,6 +13,10 @@ The library owns the media source pipeline and leaves UI controls to Vidstack or
 - DASH `SegmentList` manifest reader for TypeType SABR sessions
 - MSE append queues for audio and video source buffers
 - Explicit startup, buffer fill, seek, and destroy lifecycle
+- Abort-safe seek coalescing
+- Bounded forward buffer and back-buffer trimming
+- Native media element event observation for state diagnostics
+- Runtime snapshots for TypeType integration probes
 
 ## Usage
 
@@ -34,6 +38,16 @@ const engine = new TypeTypeMsePlayer(videoElement, {
 engine.on("state", (event) => console.log(event.state));
 await engine.load();
 await engine.play();
+```
+
+## Diagnostics
+
+```ts
+const snapshot = engine.snapshot();
+
+engine.on("buffer", (event) => {
+  console.log(event.currentTimeMs, event.bufferedEndMs);
+});
 ```
 
 ## Integration Model

@@ -24,3 +24,22 @@ test("coalesces seeks to the latest pending position", async () => {
   await running;
   expect(positions).toEqual([10, 30]);
 });
+
+test("continues to the latest seek after an abort", async () => {
+  const controller = new SeekController();
+  const positions: number[] = [];
+  const running = controller.seek(10, async (position) => {
+    positions.push(position);
+    if (position === 10) throw new DOMException("aborted", "AbortError");
+  });
+  controller.seek(40, async () => undefined);
+  await running;
+  expect(positions).toEqual([10, 40]);
+});
+
+test("throws non-abort seek errors", async () => {
+  const controller = new SeekController();
+  await expect(
+    controller.seek(10, async () => Promise.reject(new Error("failed"))),
+  ).rejects.toThrow("failed");
+});

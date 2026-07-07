@@ -23,3 +23,9 @@ export function createSnapshot(
     bufferedEndMs,
   };
 }
+
+export function bufferedEndMs(video: HTMLVideoElement): number {
+  const buffered = video.buffered;
+  if (buffered.length === 0) return 0;
+  return Math.round(buffered.end(buffered.length - 1) * 1000);
+}

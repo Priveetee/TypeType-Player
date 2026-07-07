@@ -18,7 +18,17 @@ export class SeekController {
     while (this.requestedMs !== null) {
       const target = this.requestedMs;
       this.requestedMs = null;
-      await execute(target);
+      try {
+        await execute(target);
+      } catch (error) {
+        if (!isAbortError(error) || this.requestedMs === null) throw error;
+      }
     }
   }
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException
+    ? error.name === "AbortError"
+    : error instanceof Error && error.name === "AbortError";
 }
