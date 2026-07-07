@@ -36,7 +36,7 @@ export class HttpClient {
   }
 
   absolute(path: string): string {
-    return new URL(path, this.normalizedEndpoint()).href;
+    return new URL(path.replace(/^\/+/, ""), this.normalizedEndpoint()).href;
   }
 
   private fetch(path: string, init?: RequestInit): Promise<Response> {

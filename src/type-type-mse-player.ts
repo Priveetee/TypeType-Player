@@ -107,6 +107,7 @@ export class TypeTypeMsePlayer {
     const signal = this.operation.signal;
     const targetMs = Math.max(0, Math.round(positionMs));
     this.deps.loop.stop();
+    this.video.currentTime = targetMs / 1000;
     this.setState("seeking");
     this.emitter.emit({ type: "seek", positionMs: targetMs });
     const response = await this.deps.playback.seek(
