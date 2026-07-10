@@ -30,6 +30,6 @@ export function bufferedEndMs(video: HTMLVideoElement): number {
   return Math.round(buffered.end(buffered.length - 1) * 1000);
 }
 
-export function currentTimeMs(video: HTMLVideoElement): number {
+export function currentTimeMs(video: { currentTime: number }): number {
   return Math.max(0, Math.round(video.currentTime * 1000));
 }

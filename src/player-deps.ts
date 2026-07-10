@@ -48,7 +48,6 @@ export function createPlayerDeps(args: Args): PlayerDeps {
   const scheduler = new SegmentScheduler(http, media, args.emitter, policy.segmentPollLimit);
   const loop = new PlaybackLoop({
     video: args.video,
-    http,
     playback,
     media,
     scheduler,
