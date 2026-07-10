@@ -85,7 +85,7 @@ async function attachSession(
 }
 
 export async function refreshPlaybackWindow(
-  playback: PlaybackClient,
+  playback: Pick<PlaybackClient, "position" | "prefetch" | "segments">,
   media: Pick<MediaSourceController, "bufferedRanges">,
   session: LoadedSession,
   policy: BufferPolicy,
