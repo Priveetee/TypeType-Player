@@ -1,6 +1,6 @@
-# TypeType MSE
+# TypeType Player
 
-TypeType MSE is a browser-side Media Source Extensions engine for TypeType SABR playback.
+TypeType Player is the browser-side Media Source Extensions engine for TypeType SABR playback.
 
 The library owns the media source pipeline and leaves UI controls to Vidstack or any other shell around the same `HTMLVideoElement`.
 
@@ -19,6 +19,10 @@ The library owns the media source pipeline and leaves UI controls to Vidstack or
 - Runtime snapshots for TypeType integration probes
 
 ## Usage
+
+```sh
+npm install @typetype/mse
+```
 
 ```ts
 import { TypeTypeMsePlayer } from "@typetype/mse";
@@ -52,11 +56,13 @@ engine.on("buffer", (event) => {
 });
 ```
 
-## Integration Model
+## Development
 
-```text
-Vidstack UI
-HTMLVideoElement
-TypeType MSE engine
-TypeType SABR playback-session API
+```sh
+bun install --frozen-lockfile
+bun run check
+bun test
+bun run build
 ```
+
+Releases are published to npm from signed `vX.Y.Z` tags through npm Trusted Publishing. The release workflow uses GitHub OIDC and does not store an npm token.
