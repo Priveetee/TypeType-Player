@@ -38,6 +38,15 @@ jobs:
       - run: node --input-type=module --eval 'const mod = await import("./dist/index.js"); if (typeof mod.TypeTypeMsePlayer !== "function") process.exit(1)'
       - name: Verify release version
         run: test "v$(node --print "require('./package.json').version")" = "$GITHUB_REF_NAME"
+      - name: Check npm version
+        id: npm-version
+        run: |
+          version=$(node --print "require('./package.json').version")
+          if npm view "@typetype/mse@$version" version >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Pack release
         id: pack
         run: echo "filename=$(npm pack --json --ignore-scripts | jq --raw-output '.[0].filename')" >> "$GITHUB_OUTPUT"
@@ -50,7 +59,8 @@ jobs:
           path: ${{ steps.pack.outputs.filename }}
           if-no-files-found: error
           retention-days: 30
-      - run: npm publish "${{ steps.pack.outputs.filename }}" --access public --provenance
+      - if: steps.npm-version.outputs.exists != 'true'
+        run: npm publish "${{ steps.pack.outputs.filename }}" --access public --provenance
 
   publish-jsr:
     runs-on: ubuntu-latest
