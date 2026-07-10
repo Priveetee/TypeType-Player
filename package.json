@@ -28,11 +28,14 @@
     "build": "bun run clean && bun run build:types && bun build src/index.ts --target browser --format esm --outfile dist/index.js",
     "build:types": "tsc --emitDeclarationOnly",
     "check": "biome check . && tsc --noEmit",
+    "check:jsr": "deno publish --dry-run --allow-dirty",
+    "check:versions": "node --eval 'const npmPackage = require(\"./package.json\"); const jsrPackage = require(\"./jsr.json\"); if (npmPackage.version !== jsrPackage.version) process.exit(1)'",
     "clean": "bun --eval 'import { rmSync } from \"node:fs\"; rmSync(\"dist\", { recursive: true, force: true })'",
     "format": "biome format --write .",
     "test": "bun test",
     "test:coverage": "bun test --coverage --coverage-reporter=lcov",
-    "prepack": "bun run build"
+    "prepack": "bun run build",
+    "publish:jsr": "deno publish"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.3",

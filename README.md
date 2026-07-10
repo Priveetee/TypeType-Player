@@ -24,6 +24,12 @@ The library owns the media source pipeline and leaves UI controls to Vidstack or
 npm install @typetype/mse
 ```
 
+The same source is also distributed through JSR:
+
+```sh
+bunx jsr add @typetype/mse
+```
+
 ```ts
 import { TypeTypeMsePlayer } from "@typetype/mse";
 
@@ -61,8 +67,9 @@ engine.on("buffer", (event) => {
 ```sh
 bun install --frozen-lockfile
 bun run check
+bun run check:jsr
 bun test
 bun run build
 ```
 
-Releases are published to npm from signed `vX.Y.Z` tags through npm Trusted Publishing. The release workflow uses GitHub OIDC and does not store an npm token.
+Releases are published to npm and JSR from `vX.Y.Z` tags through trusted publishing. The release workflow uses GitHub OIDC and does not store registry tokens.
