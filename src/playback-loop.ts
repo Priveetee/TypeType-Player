@@ -10,7 +10,7 @@ import { refreshPlaybackWindow } from "./session-loader";
 type PlaybackLoopArgs = {
   video: { currentTime: number };
   playback: Pick<PlaybackClient, "position" | "prefetch" | "segments">;
-  media: Pick<MediaSourceController, "bufferedRanges" | "trim">;
+  media: Pick<MediaSourceController, "bufferedRanges" | "endOfStream" | "trim">;
   scheduler: Pick<SegmentScheduler, "fill">;
   emitter: Pick<EventEmitter, "emit">;
   policy: BufferPolicy;
@@ -31,7 +31,7 @@ export class PlaybackLoop {
   start(): void {
     this.stop();
     this.fillTimer = setInterval(
-      () => void this.fillOnce().catch((error) => this.args.error(error)),
+      () => void this.fillOnce().catch((error) => this.fail(error)),
       this.args.policy.pollIntervalMs,
     );
     this.manifestTimer = setInterval(
@@ -62,6 +62,10 @@ export class PlaybackLoop {
         currentTimeMs: currentMs,
         bufferedEndMs,
       });
+      if (session.manifest.endOfStream && this.args.media.endOfStream()) {
+        this.stop();
+        return;
+      }
       if (bufferedEndMs < goalMs) this.requestManifestRefresh();
     } finally {
       this.filling = false;
@@ -89,9 +93,12 @@ export class PlaybackLoop {
   private requestManifestRefresh(): void {
     void this.refreshManifest().catch((error: unknown) => {
       if (error instanceof DOMException && error.name === "AbortError") return;
-      this.args.error(
-        error instanceof Error ? error : new Error("Playback manifest refresh failed"),
-      );
+      this.fail(error);
     });
+  }
+
+  private fail(error: unknown): void {
+    this.stop();
+    this.args.error(error instanceof Error ? error : new Error("SABR playback failed"));
   }
 }

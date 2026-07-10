@@ -18,6 +18,7 @@ export type ManifestTrack = {
 /** Browser-ready audio and video tracks for the current playback window. */
 export type PlaybackManifest = {
   durationMs: number;
+  endOfStream: boolean;
   audio: ManifestTrack;
   video: ManifestTrack;
 };

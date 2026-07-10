@@ -12,6 +12,7 @@ if (typeof globalThis.MediaSource === "undefined") {
 
 const manifest: PlaybackManifest = {
   durationMs: 120_000,
+  endOfStream: false,
   audio: {
     kind: "audio",
     mime: 'audio/mp4; codecs="mp4a.40.2"',
@@ -46,7 +47,7 @@ test("starts a replacement media source without stale buffered ranges", async ()
       requests.push(request);
       return window(request, false);
     },
-    prefetch: async (_sessionId: string, request: PlaybackWindowRequest) => window(request, false),
+    prefetch: async (_sessionId: string, request: PlaybackWindowRequest) => window(request, true),
     segments: async (_sessionId: string, request: PlaybackWindowRequest) => window(request, true),
   };
   await loadPlaybackSession({

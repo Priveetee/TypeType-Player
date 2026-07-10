@@ -14,6 +14,7 @@ Object.defineProperty(globalThis, "MediaSource", {
 
 const manifest: PlaybackManifest = {
   durationMs: 120_000,
+  endOfStream: false,
   audio: {
     kind: "audio",
     mime: 'audio/mp4; codecs="mp4a.40.2"',
