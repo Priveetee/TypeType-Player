@@ -72,4 +72,4 @@ bun test
 bun run build
 ```
 
-Releases are published to npm and JSR from `vX.Y.Z` tags through trusted publishing. The release workflow uses GitHub OIDC and does not store registry tokens.
+Releases are published to npm and JSR from `vX.Y.Z` tags through trusted publishing.
