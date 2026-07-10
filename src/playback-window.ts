@@ -1,13 +1,15 @@
 import type { ManifestSegment, ManifestTrack, PlaybackManifest } from "./manifest";
 import type { TrackKind } from "./types";
 
-type PlaybackBufferedRange = {
+/** Buffered media interval reported to the backend for a specific format. */
+export type PlaybackBufferedRange = {
   itag: number;
   startMs: number;
   endMs: number;
   sequenceNumber?: number;
 };
 
+/** Desired playback position, formats, and buffer bounds sent to the backend. */
 export type PlaybackWindowRequest = {
   generation: number | null;
   playerTimeMs: number;
@@ -19,8 +21,10 @@ export type PlaybackWindowRequest = {
   bufferedRanges: PlaybackBufferedRange[];
 };
 
+/** Recovery operation requested when the current playback session becomes terminal. */
 export type PlaybackWindowRecoveryAction = "retry_fresh_session_lower_video_itag";
 
+/** Parsed backend response containing media tracks or a retry instruction. */
 export type PlaybackWindow = {
   sessionId: string;
   generation: number | null;

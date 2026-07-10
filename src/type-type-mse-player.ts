@@ -16,7 +16,7 @@ import type {
   TypeTypeMseQuality,
 } from "./types";
 
-export class TypeTypeMsePlayer {
+/** Drives TypeType SABR playback through Media Source Extensions on an HTML video element. */ export class TypeTypeMsePlayer {
   private readonly emitter = new EventEmitter();
   private readonly deps: PlayerDeps;
   private readonly playerState = new PlayerState(this.emitter);
@@ -26,7 +26,7 @@ export class TypeTypeMsePlayer {
   private session: LoadedSession | null = null;
   private destroyed = false;
 
-  constructor(
+  /** Creates a player without starting network or media operations. */ constructor(
     private readonly video: HTMLVideoElement,
     private readonly config: TypeTypeMseConfig,
   ) {
@@ -43,14 +43,14 @@ export class TypeTypeMsePlayer {
     });
     this.deps.mediaEvents.start();
   }
-  on(
+  /** Subscribes to player events. */ on(
     type: TypeTypeMseEventType,
     listener: TypeTypeMseListener,
   ): () => void {
     return this.emitter.on(type, listener);
   }
 
-  async load(): Promise<void> {
+  /** Creates the initial playback session and fills the first media window. */ async load(): Promise<void> {
     ensurePlayerAlive(this.destroyed);
     const revision = this.operation.next();
     const signal = this.operation.signal;
@@ -68,18 +68,19 @@ export class TypeTypeMsePlayer {
     );
     await this.switchSession(response, startTimeMs, revision, signal);
   }
-  async play(): Promise<void> {
+  /** Starts or resumes playback after loading. */ async play(): Promise<void> {
     ensurePlayerAlive(this.destroyed);
     this.playbackIntent.play();
     await this.video.play();
     this.playerState.set("playing");
   }
 
-  pause(): void {
+  /** Pauses playback while preserving the current session and buffer. */ pause(): void {
     this.playbackIntent.pause();
     this.video.pause();
     this.playerState.set("ready");
   }
+  /** Seeks to a millisecond position without replacing the media element. */
   async seek(positionMs: number): Promise<void> {
     this.playbackIntent.capture(this.video.paused, this.playerState.value === "seeking");
     const targetMs = Math.max(0, Math.round(positionMs));
@@ -91,6 +92,7 @@ export class TypeTypeMsePlayer {
     );
   }
 
+  /** Switches formats at the current position without changing playback intent. */
   async setQuality(quality: TypeTypeMseQuality): Promise<void> {
     this.playbackIntent.capture(this.video.paused, this.playerState.value === "seeking");
     const targetMs = currentTimeMs(this.video);
@@ -103,10 +105,12 @@ export class TypeTypeMsePlayer {
     );
   }
 
+  /** Returns current state, timing, buffer, and session diagnostics. */
   snapshot(): TypeTypeMseSnapshot {
     return createSnapshot(this.video, this.playerState.value, this.session);
   }
 
+  /** Aborts pending work and releases all media and event resources. */
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
@@ -117,6 +121,7 @@ export class TypeTypeMsePlayer {
     this.playerState.destroy();
   }
 
+  /** Executes the latest coalesced seek or quality operation. */
   private async performSeek(positionMs: number, quality?: TypeTypeMseQuality): Promise<void> {
     ensurePlayerAlive(this.destroyed);
     const current = this.session;
@@ -145,6 +150,7 @@ export class TypeTypeMsePlayer {
     }
   }
 
+  /** Loads and activates a replacement backend playback session. */
   private async switchSession(
     response: LoadedSession["response"],
     startTimeMs: number,

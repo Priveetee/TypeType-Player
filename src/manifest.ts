@@ -1,11 +1,13 @@
 import type { TrackKind } from "./types";
 
+/** Resolved media segment exposed by a TypeType playback window. */
 export type ManifestSegment = {
   url: string;
   startMs: number;
   durationMs: number;
 };
 
+/** Audio or video track containing initialization data and ordered segments. */
 export type ManifestTrack = {
   kind: TrackKind;
   mime: string;
@@ -13,6 +15,7 @@ export type ManifestTrack = {
   segments: ManifestSegment[];
 };
 
+/** Browser-ready audio and video tracks for the current playback window. */
 export type PlaybackManifest = {
   durationMs: number;
   audio: ManifestTrack;

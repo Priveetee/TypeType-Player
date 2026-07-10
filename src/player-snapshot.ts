@@ -1,6 +1,7 @@
 import type { LoadedSession } from "./session-loader";
 import type { TypeTypeMseState } from "./types";
 
+/** Immutable diagnostic view of the active media element and playback session. */
 export type TypeTypeMseSnapshot = {
   state: TypeTypeMseState;
   sessionId: string | null;
