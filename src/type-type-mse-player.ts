@@ -3,7 +3,7 @@ import { EventEmitter } from "./event-emitter";
 import { PlaybackIntent } from "./playback-intent";
 import { createPlayerDeps, type PlayerDeps } from "./player-deps";
 import { emitManifest, emitQuality } from "./player-events";
-import { ensureCurrentOperation, ensurePlayerAlive } from "./player-operation";
+import { ensurePlayerAlive, PlayerOperation } from "./player-operation";
 import { loadPlayerSession } from "./player-session-loader";
 import { createSnapshot, currentTimeMs, type TypeTypeMseSnapshot } from "./player-snapshot";
 import { PlayerState } from "./player-state";
@@ -22,9 +22,8 @@ export class TypeTypeMsePlayer {
   private readonly playerState = new PlayerState(this.emitter);
   private readonly playbackIntent = new PlaybackIntent();
   private readonly seekController = new SeekController();
+  private readonly operation = new PlayerOperation();
   private session: LoadedSession | null = null;
-  private operation = new AbortController();
-  private revision = 0;
   private destroyed = false;
 
   constructor(
@@ -44,13 +43,16 @@ export class TypeTypeMsePlayer {
     });
     this.deps.mediaEvents.start();
   }
-  on(type: TypeTypeMseEventType, listener: TypeTypeMseListener): () => void {
+  on(
+    type: TypeTypeMseEventType,
+    listener: TypeTypeMseListener,
+  ): () => void {
     return this.emitter.on(type, listener);
   }
 
   async load(): Promise<void> {
     ensurePlayerAlive(this.destroyed);
-    const revision = this.nextRevision();
+    const revision = this.operation.next();
     const signal = this.operation.signal;
     this.playerState.set("loading");
     const startTimeMs = Math.max(0, Math.round(this.config.startTimeMs ?? 0));
@@ -119,7 +121,7 @@ export class TypeTypeMsePlayer {
     ensurePlayerAlive(this.destroyed);
     const current = this.session;
     if (!current) throw new Error("Player is not loaded");
-    const revision = this.nextRevision();
+    const revision = this.operation.next();
     const signal = this.operation.signal;
     const targetMs = Math.max(0, Math.round(positionMs));
     this.deps.loop.stop();
@@ -160,7 +162,7 @@ export class TypeTypeMsePlayer {
       startTimeMs,
       signal,
     });
-    ensureCurrentOperation(this.destroyed, this.revision, revision);
+    this.operation.ensureCurrent(this.destroyed, revision);
     const startMs = decodeStartMs(session.manifest, startTimeMs);
     if (startTimeMs > 0) this.video.currentTime = startMs / 1000;
     this.session = session;
@@ -172,12 +174,5 @@ export class TypeTypeMsePlayer {
     emitManifest(this.emitter, session.response, session);
     this.playerState.set("ready");
     return session;
-  }
-
-  private nextRevision(): number {
-    this.operation.abort();
-    this.operation = new AbortController();
-    this.revision += 1;
-    return this.revision;
   }
 }

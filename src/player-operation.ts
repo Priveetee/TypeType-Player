@@ -2,12 +2,28 @@ export function ensurePlayerAlive(destroyed: boolean): void {
   if (destroyed) throw new Error("Player is destroyed");
 }
 
-export function ensureCurrentOperation(
-  destroyed: boolean,
-  revision: number,
-  expectedRevision: number,
-): void {
-  if (destroyed || revision !== expectedRevision) {
-    throw new DOMException("Operation aborted", "AbortError");
+export class PlayerOperation {
+  private controller = new AbortController();
+  private revision = 0;
+
+  get signal(): AbortSignal {
+    return this.controller.signal;
+  }
+
+  next(): number {
+    this.controller.abort();
+    this.controller = new AbortController();
+    this.revision += 1;
+    return this.revision;
+  }
+
+  abort(): void {
+    this.controller.abort();
+  }
+
+  ensureCurrent(destroyed: boolean, expectedRevision: number): void {
+    if (destroyed || this.revision !== expectedRevision) {
+      throw new DOMException("Operation aborted", "AbortError");
+    }
   }
 }
