@@ -1,4 +1,4 @@
-export class TypeTypeHttpError extends Error {
+class TypeTypeHttpError extends Error {
   constructor(
     message: string,
     readonly status: number,
