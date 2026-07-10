@@ -23,6 +23,8 @@ export type TypeTypeMseConfig = {
   backBufferMs?: number;
   pollIntervalMs?: number;
   manifestRefreshMs?: number;
+  manifestPollLimit?: number;
+  segmentPollLimit?: number;
 };
 
 export type TypeTypeMseQuality = {

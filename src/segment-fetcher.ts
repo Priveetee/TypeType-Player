@@ -3,9 +3,10 @@ import type { HttpClient } from "./http-client";
 export async function fetchSegmentBytes(
   http: HttpClient,
   url: string,
+  pollLimit: number,
   signal?: AbortSignal,
 ): Promise<ArrayBuffer> {
-  for (let attempt = 0; attempt < 30; attempt += 1) {
+  for (let attempt = 0; attempt < pollLimit; attempt += 1) {
     if (signal?.aborted) throw new DOMException("Operation aborted", "AbortError");
     const response = await http.response(url, signal ? { signal } : undefined);
     if (response.status === 200) return response.arrayBuffer();

@@ -1,9 +1,13 @@
 import type { HttpClient } from "./http-client";
+import {
+  type PlaybackWindow,
+  type PlaybackWindowRequest,
+  parsePlaybackWindow,
+} from "./playback-window";
 
 export type PlaybackResponse = {
   sessionId: string;
   videoId: string;
-  manifestUrl: string | null;
   generation: number | null;
   ready: boolean;
   retryAfterMs: number | null;
@@ -45,7 +49,6 @@ function parsePlaybackResponse(value: unknown): PlaybackResponse {
   return {
     sessionId,
     videoId,
-    manifestUrl: stringField(value, "manifestUrl"),
     generation: numberField(value, "generation"),
     ready: field(value, "ready") === true,
     retryAfterMs: numberField(value, "retryAfterMs"),
@@ -86,12 +89,51 @@ export class PlaybackClient {
     return parsePlaybackResponse(response);
   }
 
-  manifestUrl(response: PlaybackResponse): string {
-    const path =
-      response.manifestUrl ?? `/sabr/playback/${encodeURIComponent(response.sessionId)}/manifest`;
-    const url = new URL(this.http.absolute(path));
-    if (response.generation !== null)
-      url.searchParams.set("generation", String(response.generation));
-    return url.href;
+  async position(
+    sessionId: string,
+    request: PlaybackWindowRequest,
+    signal?: AbortSignal,
+  ): Promise<PlaybackWindow> {
+    return this.postWindow(sessionId, "position", request, signal);
+  }
+
+  async prefetch(
+    sessionId: string,
+    request: PlaybackWindowRequest,
+    signal?: AbortSignal,
+  ): Promise<PlaybackWindow> {
+    return this.postWindow(sessionId, "prefetch", request, signal);
+  }
+
+  async segments(
+    sessionId: string,
+    request: PlaybackWindowRequest,
+    signal?: AbortSignal,
+  ): Promise<PlaybackWindow> {
+    return this.postWindow(sessionId, "segments", request, signal);
+  }
+
+  async window(
+    sessionId: string,
+    request: PlaybackWindowRequest,
+    signal?: AbortSignal,
+  ): Promise<PlaybackWindow> {
+    return this.postWindow(sessionId, "window", request, signal);
+  }
+
+  private async postWindow(
+    sessionId: string,
+    action: "position" | "prefetch" | "segments" | "window",
+    request: PlaybackWindowRequest,
+    signal?: AbortSignal,
+  ): Promise<PlaybackWindow> {
+    const path = `/sabr/playback/${encodeURIComponent(sessionId)}/${action}`;
+    const init = {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+    } satisfies RequestInit;
+    const response = await this.http.json(path, signal ? { ...init, signal } : init);
+    return parsePlaybackWindow(response, this.http.absolute(path));
   }
 }

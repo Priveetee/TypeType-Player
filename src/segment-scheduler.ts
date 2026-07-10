@@ -12,6 +12,7 @@ export class SegmentScheduler {
     private readonly http: HttpClient,
     private readonly media: MediaSourceController,
     private readonly emitter: EventEmitter,
+    private readonly pollLimit: number,
   ) {}
 
   reset(): void {
@@ -62,7 +63,7 @@ export class SegmentScheduler {
     if (signal?.aborted) throw new DOMException("Operation aborted", "AbortError");
     const key = `${kind}:${url}`;
     if (this.appended.has(key)) return;
-    const bytes = await fetchSegmentBytes(this.http, url, signal);
+    const bytes = await fetchSegmentBytes(this.http, url, this.pollLimit, signal);
     await this.media.append(kind, bytes);
     this.appended.add(key);
     this.emitter.emit({ type: "segment", kind, url, startMs, durationMs });

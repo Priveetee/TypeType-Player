@@ -1,4 +1,4 @@
-import { resolveBufferPolicy } from "./buffer-policy";
+import { type BufferPolicy, resolveBufferPolicy } from "./buffer-policy";
 import type { EventEmitter } from "./event-emitter";
 import { HttpClient } from "./http-client";
 import { MediaElementObserver } from "./media-element-observer";
@@ -17,6 +17,8 @@ export type PlayerDeps = {
   media: MediaSourceController;
   scheduler: SegmentScheduler;
   loop: PlaybackLoop;
+  policy: BufferPolicy;
+  destroy: () => void;
 };
 
 type Args = {
@@ -36,24 +38,31 @@ export function createPlayerDeps(args: Args): PlayerDeps {
       : { endpoint: args.config.endpoint },
   );
   const playback = new PlaybackClient(http);
+  const policy = resolveBufferPolicy(args.config);
   const mediaEvents = new MediaElementObserver({
     video: args.video,
     state: args.state,
     error: args.error,
   });
   const media = new MediaSourceController(args.video);
-  const scheduler = new SegmentScheduler(http, media, args.emitter);
+  const scheduler = new SegmentScheduler(http, media, args.emitter, policy.segmentPollLimit);
   const loop = new PlaybackLoop({
     video: args.video,
     http,
+    playback,
     media,
     scheduler,
     emitter: args.emitter,
-    policy: resolveBufferPolicy(args.config),
+    policy,
     session: args.session,
     signal: args.signal,
     bufferedEndMs: () => bufferedEndMs(args.video),
     error: args.error,
   });
-  return { http, playback, mediaEvents, media, scheduler, loop };
+  const destroy = () => {
+    loop.stop();
+    mediaEvents.stop();
+    media.detach();
+  };
+  return { http, playback, mediaEvents, media, scheduler, loop, policy, destroy };
 }

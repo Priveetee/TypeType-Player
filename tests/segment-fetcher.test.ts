@@ -26,6 +26,7 @@ test("polls retryable segment responses", async () => {
   const bytes = await fetchSegmentBytes(
     new HttpClient({ endpoint: "https://example.com/api" }),
     "https://example.com/segment",
+    5,
   );
   expect(calls).toBe(2);
   expect([...new Uint8Array(bytes)]).toEqual([1, 2, 3]);
