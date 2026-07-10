@@ -33,6 +33,7 @@ jobs:
       - run: bun audit --audit-level=high
       - run: bun run check
       - run: bun run check:versions
+      - run: bun run check:docs
       - run: bun run test:coverage
       - run: bun run build
       - run: node --input-type=module --eval 'const mod = await import("./dist/index.js"); if (typeof mod.TypeTypeMsePlayer !== "function") process.exit(1)'
@@ -83,6 +84,7 @@ jobs:
       - run: bun audit --audit-level=high
       - run: bun run check
       - run: bun run check:versions
+      - run: bun run check:docs
       - run: bun run test:coverage
       - name: Verify release version
         run: test "v$(node --print "require('./jsr.json').version")" = "$GITHUB_REF_NAME"

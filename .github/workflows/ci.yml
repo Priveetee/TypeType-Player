@@ -31,6 +31,7 @@ jobs:
       - run: bun audit --audit-level=high
       - run: bun run check
       - run: bun run check:versions
+      - run: bun run check:docs
       - run: bun run check:jsr
       - run: bun run test:coverage
       - run: bun run build
