@@ -135,9 +135,7 @@ async function waitForWindow(
   sessionId: string,
   request: PlaybackWindowRequest,
 ) {
-  const window = await pollSegments(args, sessionId, request);
-  if (window) return window;
-  throw new PlaybackWindowTimeoutError();
+  return pollSegments(args, sessionId, request);
 }
 
 async function pollSegments(
@@ -145,15 +143,19 @@ async function pollSegments(
   sessionId: string,
   request: PlaybackWindowRequest,
 ) {
+  handleWindow(await args.playback.position(sessionId, request, args.signal));
   for (let attempt = 0; attempt < args.policy.manifestPollLimit; attempt += 1) {
     if (args.signal.aborted) throw new DOMException("Operation aborted", "AbortError");
-    handleWindow(await args.playback.position(sessionId, request, args.signal));
-    handleWindow(await args.playback.prefetch(sessionId, request, args.signal));
+    const prefetch = handleWindow(await args.playback.prefetch(sessionId, request, args.signal));
+    if (!prefetch.ready) {
+      await new Promise((resolve) => setTimeout(resolve, prefetch.retryAfterMs ?? 500));
+      continue;
+    }
     const window = handleWindow(await args.playback.segments(sessionId, request, args.signal));
     if (window.ready && window.manifest) return window;
     await new Promise((resolve) => setTimeout(resolve, window.retryAfterMs ?? 500));
   }
-  return null;
+  throw new PlaybackWindowTimeoutError();
 }
 
 function handleWindow(window: Awaited<ReturnType<PlaybackClient["segments"]>>) {
