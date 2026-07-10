@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
+      - "npm-v[0-9]+.[0-9]+.[0-9]+"
   workflow_dispatch:
     inputs:
       release_tag:
@@ -61,7 +62,7 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
           git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"
-          test "v$(node --print "require('./package.json').version")" = "$RELEASE_TAG"
+          test "v$(node --print "require('./package.json').version")" = "${RELEASE_TAG#npm-}"
       - name: Check npm version
         id: npm-version
         run: |
@@ -87,7 +88,7 @@ jobs:
         run: npm publish "${{ steps.pack.outputs.filename }}" --access public --provenance
 
   publish-jsr:
-    if: github.event_name == 'push' || inputs.registry == 'jsr' || inputs.registry == 'both'
+    if: (github.event_name == 'push' && startsWith(github.ref_name, 'v')) || inputs.registry == 'jsr' || inputs.registry == 'both'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: jsr
@@ -116,5 +117,5 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
           git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"
-          test "v$(node --print "require('./jsr.json').version")" = "$RELEASE_TAG"
+          test "v$(node --print "require('./jsr.json').version")" = "${RELEASE_TAG#npm-}"
       - run: bun run publish:jsr
