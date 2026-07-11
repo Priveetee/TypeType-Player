@@ -33,6 +33,9 @@ export type PlaybackWindow = {
   terminalError: string | null;
   recoveryAction: PlaybackWindowRecoveryAction | null;
   retryVideoItags: number[];
+  status: string | null;
+  blockedBy: string | null;
+  bufferedEdgeMs: number | null;
   manifest: PlaybackManifest | null;
 };
 
@@ -123,6 +126,9 @@ export function parsePlaybackWindow(value: unknown, baseUrl: string): PlaybackWi
     terminalError: stringField(value, "terminalError"),
     recoveryAction: recoveryActionField(value),
     retryVideoItags: integerArrayField(value, "retryVideoItags"),
+    status: stringField(value, "status"),
+    blockedBy: stringField(value, "blockedBy"),
+    bufferedEdgeMs: numberField(value, "bufferedEdgeMs"),
     manifest: parseManifest(manifestValue, baseUrl),
   };
 }

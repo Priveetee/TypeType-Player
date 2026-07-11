@@ -20,6 +20,9 @@ function window(request: PlaybackWindowRequest): PlaybackWindow {
     terminalError: null,
     recoveryAction: null,
     retryVideoItags: [],
+    status: "ready",
+    blockedBy: null,
+    bufferedEdgeMs: 30_000,
     manifest,
   };
 }
