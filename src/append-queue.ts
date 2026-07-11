@@ -40,7 +40,9 @@ export class AppendQueue {
   }
 
   clear(): void {
-    this.queue.splice(0);
+    const error = new DOMException("Operation aborted", "AbortError");
+    this.current?.reject(error);
+    for (const item of this.queue.splice(0)) item.reject(error);
     this.current = null;
     if (this.sourceBuffer.updating) this.sourceBuffer.abort();
   }
