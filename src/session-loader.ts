@@ -135,9 +135,7 @@ async function waitForWindow(
   sessionId: string,
   request: PlaybackWindowRequest,
 ) {
-  const window = await pollSegments(args, sessionId, request);
-  if (window) return window;
-  throw new PlaybackWindowTimeoutError();
+  return pollSegments(args, sessionId, request);
 }
 
 async function pollSegments(
@@ -145,15 +143,47 @@ async function pollSegments(
   sessionId: string,
   request: PlaybackWindowRequest,
 ) {
+  handleWindow(await args.playback.position(sessionId, request, args.signal));
+  let previousEdgeMs: number | null = null;
+  let stagnantAttempts = 0;
   for (let attempt = 0; attempt < args.policy.manifestPollLimit; attempt += 1) {
     if (args.signal.aborted) throw new DOMException("Operation aborted", "AbortError");
-    handleWindow(await args.playback.position(sessionId, request, args.signal));
-    handleWindow(await args.playback.prefetch(sessionId, request, args.signal));
+    const prefetch = handleWindow(await args.playback.prefetch(sessionId, request, args.signal));
+    if (!prefetch.ready) {
+      stagnantAttempts = prefetch.bufferedEdgeMs === previousEdgeMs ? stagnantAttempts + 1 : 0;
+      previousEdgeMs = prefetch.bufferedEdgeMs;
+      await retryDelay(prefetch.retryAfterMs, stagnantAttempts, args.signal);
+      continue;
+    }
     const window = handleWindow(await args.playback.segments(sessionId, request, args.signal));
     if (window.ready && window.manifest) return window;
-    await new Promise((resolve) => setTimeout(resolve, window.retryAfterMs ?? 500));
+    stagnantAttempts = window.bufferedEdgeMs === previousEdgeMs ? stagnantAttempts + 1 : 0;
+    previousEdgeMs = window.bufferedEdgeMs;
+    await retryDelay(window.retryAfterMs, stagnantAttempts, args.signal);
   }
-  return null;
+  throw new PlaybackWindowTimeoutError();
+}
+
+function retryDelay(
+  retryAfterMs: number | null,
+  stagnantAttempts: number,
+  signal: AbortSignal,
+): Promise<void> {
+  const requestedMs = Math.max(250, retryAfterMs ?? 500);
+  const multiplier = 2 ** Math.min(3, Math.floor(stagnantAttempts / 4));
+  const delayMs = Math.min(2_000, requestedMs * multiplier);
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(finish, delayMs);
+    signal.addEventListener("abort", abort, { once: true });
+    function finish(): void {
+      signal.removeEventListener("abort", abort);
+      resolve();
+    }
+    function abort(): void {
+      clearTimeout(timer);
+      reject(new DOMException("Operation aborted", "AbortError"));
+    }
+  });
 }
 
 function handleWindow(window: Awaited<ReturnType<PlaybackClient["segments"]>>) {

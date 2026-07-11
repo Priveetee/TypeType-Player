@@ -9,7 +9,11 @@ test("parses native playback windows", () => {
       ready: true,
       retryAfterMs: null,
       terminalError: null,
+      status: "requesting",
+      blockedBy: "video:299:2 pending",
+      bufferedEdgeMs: 5000,
       durationMs: 120_000,
+      endOfStream: true,
       audio: {
         mime: 'audio/mp4; codecs="mp4a.40.2"',
         initUrl: "/api/sabr/playback/session/140/init?generation=2",
@@ -28,7 +32,11 @@ test("parses native playback windows", () => {
     "https://beta.typetype.video/api/sabr/playback/session/window",
   );
   expect(window.generation).toBe(2);
+  expect(window.manifest?.endOfStream).toBe(true);
   expect(window.terminalError).toBeNull();
+  expect(window.status).toBe("requesting");
+  expect(window.blockedBy).toBe("video:299:2 pending");
+  expect(window.bufferedEdgeMs).toBe(5000);
   expect(window.manifest?.video.segments[0]?.url).toBe(
     "https://beta.typetype.video/api/sabr/playback/session/137/segment/24",
   );

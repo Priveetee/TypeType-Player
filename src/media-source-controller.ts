@@ -60,6 +60,15 @@ export class MediaSourceController {
     this.videoQueue?.clear();
   }
 
+  endOfStream(): boolean {
+    const mediaSource = this.mediaSource;
+    if (!mediaSource) return false;
+    if (mediaSource.readyState === "ended") return true;
+    if (mediaSource.readyState !== "open") return false;
+    mediaSource.endOfStream();
+    return true;
+  }
+
   bufferedRanges(): MediaBufferedRange[] {
     return [
       ...this.queueRanges("audio", this.audioQueue),

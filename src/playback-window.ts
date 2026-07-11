@@ -33,6 +33,9 @@ export type PlaybackWindow = {
   terminalError: string | null;
   recoveryAction: PlaybackWindowRecoveryAction | null;
   retryVideoItags: number[];
+  status: string | null;
+  blockedBy: string | null;
+  bufferedEdgeMs: number | null;
   manifest: PlaybackManifest | null;
 };
 
@@ -53,6 +56,10 @@ function stringField(value: object, key: string): string | null {
 function numberField(value: object, key: string): number | null {
   const result = field(value, key);
   return typeof result === "number" && Number.isFinite(result) ? result : null;
+}
+
+function booleanField(value: object, key: string): boolean {
+  return field(value, key) === true;
 }
 
 function arrayField(value: object, key: string): unknown[] {
@@ -97,12 +104,13 @@ function parseTrack(kind: TrackKind, value: object, baseUrl: string): ManifestTr
 
 function parseManifest(value: object, baseUrl: string): PlaybackManifest | null {
   const durationMs = numberField(value, "durationMs") ?? 0;
+  const endOfStream = booleanField(value, "endOfStream");
   const audioValue = objectField(value, "audio");
   const videoValue = objectField(value, "video");
   if (!audioValue || !videoValue) return null;
   const audio = parseTrack("audio", audioValue, baseUrl);
   const video = parseTrack("video", videoValue, baseUrl);
-  return audio && video ? { durationMs, audio, video } : null;
+  return audio && video ? { durationMs, endOfStream, audio, video } : null;
 }
 
 export function parsePlaybackWindow(value: unknown, baseUrl: string): PlaybackWindow {
@@ -113,11 +121,14 @@ export function parsePlaybackWindow(value: unknown, baseUrl: string): PlaybackWi
   return {
     sessionId,
     generation: numberField(value, "generation"),
-    ready: field(value, "ready") === true,
+    ready: booleanField(value, "ready"),
     retryAfterMs: numberField(value, "retryAfterMs"),
     terminalError: stringField(value, "terminalError"),
     recoveryAction: recoveryActionField(value),
     retryVideoItags: integerArrayField(value, "retryVideoItags"),
+    status: stringField(value, "status"),
+    blockedBy: stringField(value, "blockedBy"),
+    bufferedEdgeMs: numberField(value, "bufferedEdgeMs"),
     manifest: parseManifest(manifestValue, baseUrl),
   };
 }
