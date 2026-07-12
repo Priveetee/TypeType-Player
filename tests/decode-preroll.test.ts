@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { decodeStartMs, seekPausedFrame } from "../src/decode-preroll";
+import { decodeStartMs, runDecodePreroll } from "../src/decode-preroll";
 import type { PlaybackManifest } from "../src/manifest";
 
 const manifest: PlaybackManifest = {
@@ -41,15 +41,49 @@ test("keeps the target for audio-only manifests", () => {
   expect(decodeStartMs({ ...manifest, video: null }, 401_200)).toBe(401_200);
 });
 
-test("finalizes a paused seek without playing", async () => {
-  const target = new EventTarget();
+test("decodes a paused frame at an existing target", async () => {
+  let plays = 0;
+  let pauses = 0;
+  let readyState = 1;
   const video = {
-    currentTime: 204,
-    addEventListener: target.addEventListener.bind(target),
-    removeEventListener: target.removeEventListener.bind(target),
+    autoplay: false,
+    currentTime: 207.599,
+    error: null,
+    muted: false,
+    playbackRate: 1,
+    get readyState() {
+      return readyState;
+    },
+    pause: () => {
+      pauses += 1;
+    },
+    play: async () => {
+      plays += 1;
+      readyState = 2;
+    },
   } as unknown as HTMLVideoElement;
-  const seek = seekPausedFrame(video, 207_599, new AbortController().signal);
-  expect(video.currentTime).toBe(207.599);
-  target.dispatchEvent(new Event("seeked"));
-  await seek;
+  await runDecodePreroll(video, 207_599, false, new AbortController().signal, true);
+  expect(plays).toBe(1);
+  expect(pauses).toBe(1);
+  expect(video.muted).toBe(false);
+  expect(video.playbackRate).toBe(1);
+});
+
+test("snaps an overshot decoded frame to the exact target", async () => {
+  let plays = 0;
+  const video = {
+    autoplay: false,
+    currentTime: 442.178,
+    error: null,
+    muted: false,
+    playbackRate: 1,
+    readyState: 4,
+    pause: () => undefined,
+    play: async () => {
+      plays += 1;
+    },
+  } as unknown as HTMLVideoElement;
+  await runDecodePreroll(video, 438_698, true, new AbortController().signal);
+  expect(video.currentTime).toBe(438.698);
+  expect(plays).toBe(0);
 });

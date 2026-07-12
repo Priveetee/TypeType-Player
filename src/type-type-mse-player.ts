@@ -1,4 +1,4 @@
-import { decodeStartMs, runDecodePreroll, seekPausedFrame } from "./decode-preroll";
+import { decodeStartMs, runDecodePreroll } from "./decode-preroll";
 import { EventEmitter } from "./event-emitter";
 import { PlaybackIntent } from "./playback-intent";
 import { createPlayerDeps, type PlayerDeps } from "./player-deps";
@@ -233,7 +233,7 @@ import type {
         this.pendingPrerollTargetMs = null;
       } else {
         if (finalizePausedSeek) {
-          await seekPausedFrame(this.video, startTimeMs, signal);
+          await runDecodePreroll(this.video, startTimeMs, false, signal, true);
           this.pendingPrerollTargetMs = null;
         } else {
           this.pendingPrerollTargetMs = startTimeMs;

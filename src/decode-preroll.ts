@@ -3,9 +3,11 @@ import type { PlaybackManifest } from "./manifest";
 const PREROLL_RATE = 16;
 const TARGET_TOLERANCE_MS = 80;
 const TARGET_BOUNDARY_TOLERANCE_MS = 1;
-const PAUSED_SEEK_TIMEOUT_MS = 5_000;
+const HAVE_CURRENT_DATA = 2;
 const MIN_PREROLL_TIMEOUT_MS = 5_000;
 const MAX_PREROLL_TIMEOUT_MS = 15_000;
+const SNAP_TIMEOUT_MS = 2_000;
+const SNAP_TOLERANCE_MS = 20;
 
 export function decodeStartMs(manifest: PlaybackManifest, targetMs: number): number {
   if (!manifest.video) return targetMs;
@@ -24,8 +26,14 @@ export async function runDecodePreroll(
   targetMs: number,
   resumePlayback: boolean,
   signal: AbortSignal,
+  requireFrame = false,
 ): Promise<void> {
-  if (video.currentTime * 1000 >= targetMs - TARGET_TOLERANCE_MS) return;
+  const targetReached = video.currentTime * 1000 >= targetMs - TARGET_TOLERANCE_MS;
+  if (targetReached && (!requireFrame || video.readyState >= HAVE_CURRENT_DATA)) {
+    const exact = Math.abs(video.currentTime * 1000 - targetMs) <= SNAP_TOLERANCE_MS;
+    if (!exact) await snapToTarget(video, targetMs, signal);
+    return;
+  }
   const muted = video.muted;
   const playbackRate = video.playbackRate;
   const autoplay = video.autoplay;
@@ -35,6 +43,7 @@ export async function runDecodePreroll(
   try {
     await video.play();
     await waitForTarget(video, targetMs, signal);
+    await snapToTarget(video, targetMs, signal);
   } finally {
     video.playbackRate = playbackRate;
     video.muted = muted;
@@ -44,33 +53,24 @@ export async function runDecodePreroll(
   }
 }
 
-export function seekPausedFrame(
+function snapToTarget(
   video: HTMLVideoElement,
   targetMs: number,
   signal: AbortSignal,
 ): Promise<void> {
-  if (signal.aborted) return Promise.reject(new DOMException("Operation aborted", "AbortError"));
-  if (Math.abs(video.currentTime * 1000 - targetMs) <= TARGET_TOLERANCE_MS)
-    return Promise.resolve();
+  video.currentTime = targetMs / 1000;
   return new Promise((resolve, reject) => {
-    const cleanup = () => {
-      clearTimeout(timeout);
-      signal.removeEventListener("abort", abort);
-      video.removeEventListener("seeked", seeked);
+    const startedAt = performance.now();
+    const poll = () => {
+      if (signal.aborted) return reject(new DOMException("Operation aborted", "AbortError"));
+      if (video.error) return reject(new Error(video.error.message));
+      const exact = Math.abs(video.currentTime * 1000 - targetMs) <= SNAP_TOLERANCE_MS;
+      if (exact && video.readyState >= HAVE_CURRENT_DATA) return resolve();
+      if (performance.now() - startedAt >= SNAP_TIMEOUT_MS)
+        return reject(new Error("Seek target snap timed out"));
+      setTimeout(poll, 10);
     };
-    const finish = (callback: () => void) => {
-      cleanup();
-      callback();
-    };
-    const abort = () => finish(() => reject(new DOMException("Operation aborted", "AbortError")));
-    const seeked = () => finish(resolve);
-    const timeout = setTimeout(
-      () => finish(() => reject(new Error("Paused seek timed out"))),
-      PAUSED_SEEK_TIMEOUT_MS,
-    );
-    signal.addEventListener("abort", abort, { once: true });
-    video.addEventListener("seeked", seeked, { once: true });
-    video.currentTime = targetMs / 1000;
+    poll();
   });
 }
 
