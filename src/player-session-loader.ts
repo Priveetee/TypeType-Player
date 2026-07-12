@@ -1,3 +1,4 @@
+import { decodeStartMs } from "./decode-preroll";
 import type { PlayerDeps } from "./player-deps";
 import {
   type LoadedSession,
@@ -68,9 +69,10 @@ async function loadSelectedSession(
     policy: args.deps.policy,
     signal: args.signal,
   });
+  const fillStartMs = decodeStartMs(session.manifest, args.startTimeMs);
   await args.deps.scheduler.fill(
     session.manifest,
-    args.startTimeMs,
+    fillStartMs,
     args.startTimeMs + args.deps.policy.bufferGoalMs,
     args.signal,
   );
