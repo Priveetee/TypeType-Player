@@ -29,6 +29,10 @@ test("starts audiovisual decode from the video sync segment", () => {
   expect(decodeStartMs(manifest, 401_200)).toBe(398_360);
 });
 
+test("starts directly on an exact audio fragment boundary", () => {
+  expect(decodeStartMs(manifest, 399_383)).toBe(399_383);
+});
+
 test("keeps the target when no video segment contains it", () => {
   expect(decodeStartMs(manifest, 500_000)).toBe(500_000);
 });

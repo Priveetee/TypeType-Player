@@ -2,9 +2,16 @@ import type { PlaybackManifest } from "./manifest";
 
 const PREROLL_RATE = 16;
 const TARGET_TOLERANCE_MS = 80;
+const TARGET_BOUNDARY_TOLERANCE_MS = 1;
+const MIN_PREROLL_TIMEOUT_MS = 5_000;
+const MAX_PREROLL_TIMEOUT_MS = 15_000;
 
 export function decodeStartMs(manifest: PlaybackManifest, targetMs: number): number {
   if (!manifest.video) return targetMs;
+  const audio = manifest.audio.segments.find(
+    (item) => item.startMs <= targetMs && item.startMs + item.durationMs > targetMs,
+  );
+  if (audio && Math.abs(audio.startMs - targetMs) <= TARGET_BOUNDARY_TOLERANCE_MS) return targetMs;
   const video = manifest.video.segments.find(
     (item) => item.startMs <= targetMs && item.startMs + item.durationMs > targetMs,
   );
@@ -42,7 +49,11 @@ function waitForTarget(
   signal: AbortSignal,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const timeoutMs = Math.min(5_000, Math.max(1_000, (targetMs - video.currentTime * 1000) / 8));
+    const decodeDistanceMs = Math.max(0, targetMs - video.currentTime * 1000);
+    const timeoutMs = Math.min(
+      MAX_PREROLL_TIMEOUT_MS,
+      Math.max(MIN_PREROLL_TIMEOUT_MS, decodeDistanceMs * 2),
+    );
     const startedAt = performance.now();
     const poll = () => {
       if (signal.aborted) return reject(new DOMException("Operation aborted", "AbortError"));

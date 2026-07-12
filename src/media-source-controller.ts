@@ -130,8 +130,14 @@ export class MediaSourceController {
   }
 
   detach(): void {
+    const mediaSource = this.mediaSource;
     this.destroyQueues();
     const ownsMediaElement = this.objectUrl !== null && this.video.src === this.objectUrl;
+    if (mediaSource?.readyState === "open") {
+      for (const sourceBuffer of Array.from(mediaSource.sourceBuffers)) {
+        mediaSource.removeSourceBuffer(sourceBuffer);
+      }
+    }
     this.mediaSource = null;
     if (ownsMediaElement) {
       this.video.removeAttribute("src");
