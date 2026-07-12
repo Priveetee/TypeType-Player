@@ -1,4 +1,4 @@
-import { decodeStartMs, runDecodePreroll } from "./decode-preroll";
+import { decodeStartMs, runDecodePreroll, seekPausedFrame } from "./decode-preroll";
 import { EventEmitter } from "./event-emitter";
 import { PlaybackIntent } from "./playback-intent";
 import { createPlayerDeps, type PlayerDeps } from "./player-deps";
@@ -190,6 +190,7 @@ import type {
         signal,
         quality,
         audioOnly,
+        true,
       );
       if (quality) emitQuality(this.emitter, session);
     } catch (error) {
@@ -209,6 +210,7 @@ import type {
     signal: AbortSignal,
     quality?: TypeTypeMseQuality,
     audioOnly = this.audioOnly,
+    finalizePausedSeek = false,
   ): Promise<LoadedSession> {
     const session = await loadPlayerSession({
       deps: this.deps,
@@ -230,7 +232,12 @@ import type {
         await runDecodePreroll(this.video, startTimeMs, true, signal);
         this.pendingPrerollTargetMs = null;
       } else {
-        this.pendingPrerollTargetMs = startTimeMs;
+        if (finalizePausedSeek) {
+          await seekPausedFrame(this.video, startTimeMs, signal);
+          this.pendingPrerollTargetMs = null;
+        } else {
+          this.pendingPrerollTargetMs = startTimeMs;
+        }
       }
     } else if (this.playbackIntent.shouldResume) {
       this.pendingPrerollTargetMs = null;

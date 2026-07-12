@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { decodeStartMs } from "../src/decode-preroll";
+import { decodeStartMs, seekPausedFrame } from "../src/decode-preroll";
 import type { PlaybackManifest } from "../src/manifest";
 
 const manifest: PlaybackManifest = {
@@ -39,4 +39,17 @@ test("keeps the target when no video segment contains it", () => {
 
 test("keeps the target for audio-only manifests", () => {
   expect(decodeStartMs({ ...manifest, video: null }, 401_200)).toBe(401_200);
+});
+
+test("finalizes a paused seek without playing", async () => {
+  const target = new EventTarget();
+  const video = {
+    currentTime: 204,
+    addEventListener: target.addEventListener.bind(target),
+    removeEventListener: target.removeEventListener.bind(target),
+  } as unknown as HTMLVideoElement;
+  const seek = seekPausedFrame(video, 207_599, new AbortController().signal);
+  expect(video.currentTime).toBe(207.599);
+  target.dispatchEvent(new Event("seeked"));
+  await seek;
 });

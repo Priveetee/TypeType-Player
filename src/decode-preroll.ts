@@ -3,6 +3,7 @@ import type { PlaybackManifest } from "./manifest";
 const PREROLL_RATE = 16;
 const TARGET_TOLERANCE_MS = 80;
 const TARGET_BOUNDARY_TOLERANCE_MS = 1;
+const PAUSED_SEEK_TIMEOUT_MS = 5_000;
 const MIN_PREROLL_TIMEOUT_MS = 5_000;
 const MAX_PREROLL_TIMEOUT_MS = 15_000;
 
@@ -41,6 +42,36 @@ export async function runDecodePreroll(
     if (!resumePlayback) video.pause();
     else if (!signal.aborted) await video.play();
   }
+}
+
+export function seekPausedFrame(
+  video: HTMLVideoElement,
+  targetMs: number,
+  signal: AbortSignal,
+): Promise<void> {
+  if (signal.aborted) return Promise.reject(new DOMException("Operation aborted", "AbortError"));
+  if (Math.abs(video.currentTime * 1000 - targetMs) <= TARGET_TOLERANCE_MS)
+    return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      clearTimeout(timeout);
+      signal.removeEventListener("abort", abort);
+      video.removeEventListener("seeked", seeked);
+    };
+    const finish = (callback: () => void) => {
+      cleanup();
+      callback();
+    };
+    const abort = () => finish(() => reject(new DOMException("Operation aborted", "AbortError")));
+    const seeked = () => finish(resolve);
+    const timeout = setTimeout(
+      () => finish(() => reject(new Error("Paused seek timed out"))),
+      PAUSED_SEEK_TIMEOUT_MS,
+    );
+    signal.addEventListener("abort", abort, { once: true });
+    video.addEventListener("seeked", seeked, { once: true });
+    video.currentTime = targetMs / 1000;
+  });
 }
 
 function waitForTarget(
