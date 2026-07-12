@@ -176,6 +176,8 @@ import type {
     await this.deps.loop.fillOnce();
     if (startTimeMs > startMs) {
       await runDecodePreroll(this.video, startTimeMs, this.playbackIntent.shouldResume, signal);
+    } else if (this.playbackIntent.shouldResume) {
+      await this.video.play();
     }
     this.deps.loop.start();
     emitManifest(this.emitter, session.response, session);
