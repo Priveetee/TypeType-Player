@@ -111,6 +111,7 @@ test("attach remembers when dynamic source buffers exceed browser quota", async 
   await controller.attach(manifest(true));
 
   expect(state.sourceBufferReuseSupported).toBeFalse();
+  expect(controller.supportsTrackLayoutChanges()).toBeFalse();
   expect(replacements).toHaveLength(2);
   expect(replacements[0].removed).toEqual([]);
   expect(video.src).toBe("blob:replacement-2");

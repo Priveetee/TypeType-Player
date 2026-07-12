@@ -113,6 +113,19 @@ import type {
   async setAudioOnly(audioOnly: boolean): Promise<void> {
     ensurePlayerAlive(this.destroyed);
     if (this.audioOnly === audioOnly) return;
+    if (this.session?.audioOnly === audioOnly) {
+      this.audioOnly = audioOnly;
+      return;
+    }
+    if (
+      audioOnly &&
+      this.session &&
+      !this.session.audioOnly &&
+      !this.deps.media.supportsTrackLayoutChanges()
+    ) {
+      this.audioOnly = true;
+      return;
+    }
     this.playbackIntent.capture(this.video.paused, this.playerState.value === "seeking");
     const previous = this.audioOnly;
     const targetMs = currentTimeMs(this.video);

@@ -127,6 +127,10 @@ export class MediaSourceController {
     ];
   }
 
+  supportsTrackLayoutChanges(): boolean {
+    return this.sourceBufferReuseSupported;
+  }
+
   detach(): void {
     this.destroyQueues();
     const ownsMediaElement = this.objectUrl !== null && this.video.src === this.objectUrl;
