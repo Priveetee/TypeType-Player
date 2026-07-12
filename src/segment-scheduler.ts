@@ -7,6 +7,7 @@ import type { TrackKind } from "./types";
 
 export class SegmentScheduler {
   private readonly appended = new Set<string>();
+  private readonly appendedEndMs = new Map<TrackKind, number>();
 
   constructor(
     private readonly http: HttpClient,
@@ -17,6 +18,7 @@ export class SegmentScheduler {
 
   reset(): void {
     this.appended.clear();
+    this.appendedEndMs.clear();
   }
 
   async appendInit(manifest: PlaybackManifest, signal?: AbortSignal): Promise<void> {
@@ -45,11 +47,17 @@ export class SegmentScheduler {
     goalMs: number,
     signal?: AbortSignal,
   ): Promise<void> {
-    const candidates = segments.filter(
-      (segment) => segment.startMs + segment.durationMs >= currentMs && segment.startMs <= goalMs,
-    );
+    const candidates = segments
+      .filter(
+        (segment) => segment.startMs + segment.durationMs > currentMs && segment.startMs <= goalMs,
+      )
+      .sort((left, right) => left.startMs - right.startMs);
     for (const segment of candidates) {
+      const segmentEndMs = segment.startMs + segment.durationMs;
+      const appendedEndMs = this.appendedEndMs.get(kind);
+      if (appendedEndMs !== undefined && segmentEndMs <= appendedEndMs) continue;
       await this.appendUrl(kind, segment.url, segment.startMs, segment.durationMs, signal);
+      this.appendedEndMs.set(kind, Math.max(appendedEndMs ?? 0, segmentEndMs));
     }
   }
 
