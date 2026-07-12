@@ -5,6 +5,7 @@ import { MediaSourceController } from "../src/media-source-controller";
 type ControllerState = {
   objectUrl: string | null;
   mediaSource: MediaSource | null;
+  sourceBufferReuseSupported: boolean;
 };
 
 const audio = {
@@ -85,15 +86,56 @@ test("attach reuses the open media source while replacing its source buffers", a
   expect(mediaSource.sourceBuffers).toHaveLength(1);
 });
 
+test("attach remembers when dynamic source buffers exceed browser quota", async () => {
+  const current = new FakeMediaSource();
+  current.rejectAddsAfterRemoval = true;
+  current.addSourceBuffer();
+  current.addSourceBuffer();
+  const replacements: FakeMediaSource[] = [];
+  const { video } = videoElement("blob:stable");
+  const controller = new MediaSourceController(video, {
+    create: () => {
+      const mediaSource = new FakeMediaSource("closed");
+      replacements.push(mediaSource);
+      queueMicrotask(() => mediaSource.open());
+      return mediaSource as unknown as MediaSource;
+    },
+    createObjectUrl: () => `blob:replacement-${replacements.length}`,
+    revokeObjectUrl: () => undefined,
+  });
+  const state = controller as unknown as ControllerState;
+  state.objectUrl = "blob:stable";
+  state.mediaSource = current as unknown as MediaSource;
+
+  await controller.attach(manifest(false));
+  await controller.attach(manifest(true));
+
+  expect(state.sourceBufferReuseSupported).toBeFalse();
+  expect(replacements).toHaveLength(2);
+  expect(replacements[0].removed).toEqual([]);
+  expect(video.src).toBe("blob:replacement-2");
+});
+
 class FakeMediaSource {
   readonly sourceBuffers: SourceBuffer[] = [];
   readonly removed: SourceBuffer[] = [];
+  rejectAddsAfterRemoval = false;
   duration = Number.NaN;
-  readyState: ReadyState = "open";
+  readyState: ReadyState;
+  private readonly listeners = new Map<string, () => void>();
 
-  addEventListener(): void {}
+  constructor(readyState: ReadyState = "open") {
+    this.readyState = readyState;
+  }
+
+  addEventListener(type: string, listener: EventListenerOrEventListenerObject): void {
+    if (typeof listener === "function") this.listeners.set(type, listener as () => void);
+  }
 
   addSourceBuffer(): SourceBuffer {
+    if (this.rejectAddsAfterRemoval && this.removed.length > 0) {
+      throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
+    }
     const buffer = {
       updating: false,
       buffered: { length: 0 },
@@ -108,5 +150,10 @@ class FakeMediaSource {
   removeSourceBuffer(buffer: SourceBuffer): void {
     this.removed.push(buffer);
     this.sourceBuffers.splice(this.sourceBuffers.indexOf(buffer), 1);
+  }
+
+  open(): void {
+    this.readyState = "open";
+    this.listeners.get("sourceopen")?.();
   }
 }

@@ -8,13 +8,29 @@ export type MediaBufferedRange = {
   endMs: number;
 };
 
+type MediaSourcePlatform = {
+  create: () => MediaSource;
+  createObjectUrl: (mediaSource: MediaSource) => string;
+  revokeObjectUrl: (url: string) => void;
+};
+
+const browserMediaSourcePlatform: MediaSourcePlatform = {
+  create: () => new MediaSource(),
+  createObjectUrl: (mediaSource) => URL.createObjectURL(mediaSource),
+  revokeObjectUrl: (url) => URL.revokeObjectURL(url),
+};
+
 export class MediaSourceController {
   private objectUrl: string | null = null;
   private audioQueue: AppendQueue | null = null;
   private videoQueue: AppendQueue | null = null;
   private mediaSource: MediaSource | null = null;
+  private sourceBufferReuseSupported = true;
 
-  constructor(private readonly video: HTMLVideoElement) {}
+  constructor(
+    private readonly video: HTMLVideoElement,
+    private readonly platform = browserMediaSourcePlatform,
+  ) {}
 
   static supported(manifest: PlaybackManifest): boolean {
     return (
@@ -25,12 +41,13 @@ export class MediaSourceController {
 
   async attach(manifest: PlaybackManifest): Promise<void> {
     const mediaSource = this.reusableMediaSource();
-    if (mediaSource) {
+    if (mediaSource && this.sourceBufferReuseSupported) {
       try {
         this.replaceSourceBuffers(mediaSource, manifest);
         return;
       } catch (error) {
         if (!isSourceBufferQuotaError(error)) throw error;
+        this.sourceBufferReuseSupported = false;
       }
     }
     this.detach();
@@ -38,9 +55,9 @@ export class MediaSourceController {
   }
 
   private async attachNewMediaSource(manifest: PlaybackManifest): Promise<void> {
-    const mediaSource = new MediaSource();
+    const mediaSource = this.platform.create();
     this.mediaSource = mediaSource;
-    this.objectUrl = URL.createObjectURL(mediaSource);
+    this.objectUrl = this.platform.createObjectUrl(mediaSource);
     this.video.src = this.objectUrl;
     await new Promise<void>((resolve, reject) => {
       const sourceOpen = () => resolve();
@@ -118,7 +135,7 @@ export class MediaSourceController {
       this.video.removeAttribute("src");
       this.video.load();
     }
-    if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
+    if (this.objectUrl) this.platform.revokeObjectUrl(this.objectUrl);
     this.objectUrl = null;
   }
 
