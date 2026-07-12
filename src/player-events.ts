@@ -19,6 +19,7 @@ export function emitManifest(
   emitter.emit({
     type: "manifest",
     generation: response.generation,
-    segmentCount: session.manifest.audio.segments.length + session.manifest.video.segments.length,
+    segmentCount:
+      session.manifest.audio.segments.length + (session.manifest.video?.segments.length ?? 0),
   });
 }

@@ -20,10 +20,9 @@ export class SegmentScheduler {
   }
 
   async appendInit(manifest: PlaybackManifest, signal?: AbortSignal): Promise<void> {
-    await Promise.all([
-      this.appendUrl("audio", manifest.audio.initUrl, 0, 0, signal),
-      this.appendUrl("video", manifest.video.initUrl, 0, 0, signal),
-    ]);
+    const tasks = [this.appendUrl("audio", manifest.audio.initUrl, 0, 0, signal)];
+    if (manifest.video) tasks.push(this.appendUrl("video", manifest.video.initUrl, 0, 0, signal));
+    await Promise.all(tasks);
   }
 
   async fill(
@@ -32,10 +31,11 @@ export class SegmentScheduler {
     goalMs: number,
     signal?: AbortSignal,
   ): Promise<void> {
-    await Promise.all([
-      this.fillTrack("audio", manifest.audio.segments, currentMs, goalMs, signal),
-      this.fillTrack("video", manifest.video.segments, currentMs, goalMs, signal),
-    ]);
+    const tasks = [this.fillTrack("audio", manifest.audio.segments, currentMs, goalMs, signal)];
+    if (manifest.video) {
+      tasks.push(this.fillTrack("video", manifest.video.segments, currentMs, goalMs, signal));
+    }
+    await Promise.all(tasks);
   }
 
   private async fillTrack(

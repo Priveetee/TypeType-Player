@@ -11,6 +11,7 @@ export type LoadedSession = {
   videoItag: number;
   audioItag: number;
   audioTrackId: string | null;
+  audioOnly: boolean;
 };
 
 type LoadSessionArgs = {
@@ -22,6 +23,7 @@ type LoadSessionArgs = {
   videoItag: number;
   audioItag: number;
   audioTrackId: string | null;
+  audioOnly: boolean;
   startTimeMs: number;
   policy: BufferPolicy;
   signal: AbortSignal;
@@ -29,7 +31,7 @@ type LoadSessionArgs = {
 
 type PlaybackWindowRequestArgs = Pick<
   LoadSessionArgs,
-  "response" | "videoItag" | "audioItag" | "audioTrackId" | "policy"
+  "response" | "videoItag" | "audioItag" | "audioTrackId" | "audioOnly" | "policy"
 > & {
   media: Pick<MediaSourceController, "bufferedRanges">;
 };
@@ -81,6 +83,7 @@ async function attachSession(
     videoItag: args.videoItag,
     audioItag: args.audioItag,
     audioTrackId: args.audioTrackId,
+    audioOnly: args.audioOnly,
   };
 }
 
@@ -113,6 +116,7 @@ function playbackWindowRequest(
     videoItag: args.videoItag,
     audioItag: args.audioItag,
     audioTrackId: args.audioTrackId,
+    audioOnly: args.audioOnly,
     bufferGoalMs: args.policy.bufferGoalMs,
     backBufferMs: args.policy.backBufferMs,
     bufferedRanges: playbackBufferedRanges(args.media.bufferedRanges(), args),

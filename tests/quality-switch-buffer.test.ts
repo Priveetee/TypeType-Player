@@ -71,6 +71,7 @@ test("starts a replacement media source without stale buffered ranges", async ()
     videoItag: 247,
     audioItag: 140,
     audioTrackId: null,
+    audioOnly: false,
     startTimeMs: 20_000,
     policy: {
       bufferGoalMs: 30_000,

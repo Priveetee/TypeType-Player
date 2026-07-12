@@ -20,6 +20,7 @@ export type TypeTypeMseConfig = {
   videoItag: number;
   audioItag: number;
   audioTrackId: string | null;
+  audioOnly?: boolean;
   startTimeMs?: number;
   headers?: HeadersInit;
   bufferGoalMs?: number;

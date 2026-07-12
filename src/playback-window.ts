@@ -16,6 +16,7 @@ export type PlaybackWindowRequest = {
   videoItag: number;
   audioItag: number;
   audioTrackId: string | null;
+  audioOnly: boolean;
   bufferGoalMs: number;
   backBufferMs: number;
   bufferedRanges: PlaybackBufferedRange[];
@@ -107,10 +108,10 @@ function parseManifest(value: object, baseUrl: string): PlaybackManifest | null 
   const endOfStream = booleanField(value, "endOfStream");
   const audioValue = objectField(value, "audio");
   const videoValue = objectField(value, "video");
-  if (!audioValue || !videoValue) return null;
+  if (!audioValue) return null;
   const audio = parseTrack("audio", audioValue, baseUrl);
-  const video = parseTrack("video", videoValue, baseUrl);
-  return audio && video ? { durationMs, endOfStream, audio, video } : null;
+  const video = videoValue ? parseTrack("video", videoValue, baseUrl) : null;
+  return audio && (!videoValue || video) ? { durationMs, endOfStream, audio, video } : null;
 }
 
 export function parsePlaybackWindow(value: unknown, baseUrl: string): PlaybackWindow {

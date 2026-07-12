@@ -19,7 +19,7 @@ export class MediaSourceController {
   static supported(manifest: PlaybackManifest): boolean {
     return (
       MediaSource.isTypeSupported(manifest.audio.mime) &&
-      MediaSource.isTypeSupported(manifest.video.mime)
+      (!manifest.video || MediaSource.isTypeSupported(manifest.video.mime))
     );
   }
 
@@ -38,7 +38,9 @@ export class MediaSourceController {
     if (this.mediaSource !== mediaSource) throw new DOMException("Operation aborted", "AbortError");
     mediaSource.duration = manifest.durationMs > 0 ? manifest.durationMs / 1000 : Number.NaN;
     this.audioQueue = new AppendQueue(mediaSource.addSourceBuffer(manifest.audio.mime));
-    this.videoQueue = new AppendQueue(mediaSource.addSourceBuffer(manifest.video.mime));
+    this.videoQueue = manifest.video
+      ? new AppendQueue(mediaSource.addSourceBuffer(manifest.video.mime))
+      : null;
   }
 
   append(kind: TrackKind, data: ArrayBuffer): Promise<void> {
@@ -89,7 +91,7 @@ export class MediaSourceController {
     if (hadObjectUrl) this.video.load();
   }
 
-  track(kind: TrackKind, manifest: PlaybackManifest): ManifestTrack {
+  track(kind: TrackKind, manifest: PlaybackManifest): ManifestTrack | null {
     return kind === "audio" ? manifest.audio : manifest.video;
   }
 

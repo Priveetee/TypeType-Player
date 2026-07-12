@@ -15,10 +15,10 @@ export type ManifestTrack = {
   segments: ManifestSegment[];
 };
 
-/** Browser-ready audio and video tracks for the current playback window. */
+/** Browser-ready tracks for the current playback window. */
 export type PlaybackManifest = {
   durationMs: number;
   endOfStream: boolean;
   audio: ManifestTrack;
-  video: ManifestTrack;
+  video: ManifestTrack | null;
 };

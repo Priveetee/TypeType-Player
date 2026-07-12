@@ -59,3 +59,30 @@ test("parses playback window recovery hints", () => {
   expect(window.recoveryAction).toBe("retry_fresh_session_lower_video_itag");
   expect(window.retryVideoItags).toEqual([136, 135, 134]);
 });
+
+test("parses audio-only playback windows", () => {
+  const window = parsePlaybackWindow(
+    {
+      sessionId: "audio-session",
+      generation: 3,
+      ready: true,
+      durationMs: 420_000,
+      endOfStream: false,
+      audio: {
+        mime: 'audio/mp4; codecs="mp4a.40.2"',
+        initUrl: "/api/sabr/playback/audio-session/140/init?generation=3",
+        segments: [
+          {
+            url: "/api/sabr/playback/audio-session/140/segment/8?generation=3",
+            startMs: 69_895,
+            durationMs: 9_985,
+          },
+        ],
+      },
+      video: null,
+    },
+    "https://beta.typetype.video/api/sabr/playback/audio-session/segments",
+  );
+  expect(window.manifest?.video).toBeNull();
+  expect(window.manifest?.audio.segments[0]?.startMs).toBe(69_895);
+});

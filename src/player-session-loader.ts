@@ -63,6 +63,7 @@ function loadSelectedSession(
     videoItag: selection.videoItag,
     audioItag: selection.audioItag,
     audioTrackId: selection.audioTrackId,
+    audioOnly: args.config.audioOnly === true,
     startTimeMs: args.startTimeMs,
     policy: args.deps.policy,
     signal: args.signal,
@@ -85,6 +86,7 @@ async function recoverWithFreshSessions(
           audioItag: selection.audioItag,
           audioTrackId: selection.audioTrackId,
           startTimeMs: args.startTimeMs,
+          audioOnly: args.config.audioOnly === true,
         },
         args.signal,
       );

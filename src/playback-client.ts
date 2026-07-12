@@ -19,12 +19,14 @@ export type CreatePlaybackRequest = {
   audioItag: number;
   audioTrackId: string | null;
   startTimeMs: number;
+  audioOnly: boolean;
 };
 
 export type SeekPlaybackOptions = {
   videoItag?: number;
   audioItag?: number;
   audioTrackId?: string | null;
+  audioOnly?: boolean | undefined;
 };
 
 function field(value: object, key: string): unknown {
@@ -65,6 +67,7 @@ export class PlaybackClient {
       startTimeMs: String(request.startTimeMs),
     });
     if (request.audioTrackId) params.set("audioTrackId", request.audioTrackId);
+    if (request.audioOnly) params.set("audioOnly", "true");
     const videoId = encodeURIComponent(request.videoId);
     const init = signal ? { method: "POST", signal } : { method: "POST" };
     const response = await this.http.json(`/sabr/playback/${videoId}?${params}`, init);
@@ -84,6 +87,7 @@ export class PlaybackClient {
     if (options.videoItag) params.set("videoItag", String(options.videoItag));
     if (options.audioItag) params.set("audioItag", String(options.audioItag));
     if (options.audioTrackId) params.set("audioTrackId", options.audioTrackId);
+    if (options.audioOnly) params.set("audioOnly", "true");
     const init = signal ? { method: "POST", signal } : { method: "POST" };
     const response = await this.http.json(`/sabr/playback/${session}/seek?${params}`, init);
     return parsePlaybackResponse(response);

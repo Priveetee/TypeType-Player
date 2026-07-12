@@ -63,6 +63,7 @@ import type {
         audioItag: this.config.audioItag,
         audioTrackId: this.config.audioTrackId,
         startTimeMs,
+        audioOnly: this.config.audioOnly === true,
       },
       signal,
     );
@@ -136,7 +137,7 @@ import type {
       const response = await this.deps.playback.seek(
         current.response.sessionId,
         targetMs,
-        quality,
+        { ...quality, audioOnly: this.config.audioOnly },
         signal,
       );
       const session = await this.switchSession(response, targetMs, revision, signal, quality);
