@@ -241,7 +241,13 @@ import type {
       }
     } else if (this.playbackIntent.shouldResume) {
       this.pendingPrerollTargetMs = null;
+      if (startTimeMs > 0) {
+        await runDecodePreroll(this.video, startTimeMs, false, signal, true);
+      }
       await this.video.play();
+    } else if (finalizePausedSeek && startTimeMs > 0) {
+      await runDecodePreroll(this.video, startTimeMs, false, signal, true);
+      this.pendingPrerollTargetMs = null;
     } else {
       this.pendingPrerollTargetMs = null;
     }
