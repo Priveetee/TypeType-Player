@@ -26,8 +26,12 @@ export class MediaSourceController {
   async attach(manifest: PlaybackManifest): Promise<void> {
     const mediaSource = this.reusableMediaSource();
     if (mediaSource) {
-      this.replaceSourceBuffers(mediaSource, manifest);
-      return;
+      try {
+        this.replaceSourceBuffers(mediaSource, manifest);
+        return;
+      } catch (error) {
+        if (!isSourceBufferQuotaError(error)) throw error;
+      }
     }
     this.detach();
     await this.attachNewMediaSource(manifest);
@@ -142,4 +146,8 @@ export class MediaSourceController {
     this.audioQueue = null;
     this.videoQueue = null;
   }
+}
+
+function isSourceBufferQuotaError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "QuotaExceededError";
 }
