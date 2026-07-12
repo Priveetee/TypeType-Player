@@ -72,6 +72,7 @@ import type {
   /** Starts or resumes playback after loading. */ async play(): Promise<void> {
     ensurePlayerAlive(this.destroyed);
     this.playbackIntent.play();
+    if (!this.session || this.playerState.value === "loading") return;
     await this.video.play();
     this.playerState.set("playing");
   }
