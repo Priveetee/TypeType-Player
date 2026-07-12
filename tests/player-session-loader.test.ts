@@ -19,13 +19,13 @@ const manifest: PlaybackManifest = {
     kind: "audio",
     mime: 'audio/mp4; codecs="mp4a.40.2"',
     initUrl: "/audio/init",
-    segments: [],
+    segments: [{ url: "/audio/6", startMs: 50_000, durationMs: 20_000 }],
   },
   video: {
     kind: "video",
     mime: 'video/mp4; codecs="avc1.640028"',
     initUrl: "/video/init",
-    segments: [],
+    segments: [{ url: "/video/12", startMs: 59_000, durationMs: 11_000 }],
   },
 };
 
@@ -158,5 +158,5 @@ test("recovers terminal seek windows with a fresh lower video itag session", asy
   expect(prefetchRequests.map((request) => request.videoItag)).toEqual([137, 136]);
   expect(segmentRequests.map((request) => request.videoItag)).toEqual([136]);
   expect(positionRequests[0]).toEqual([]);
-  expect(filledWindows).toEqual([[120_000, 60_000, 90_000]]);
+  expect(filledWindows).toEqual([[120_000, 59_000, 90_000]]);
 });

@@ -8,11 +8,7 @@ export function decodeStartMs(manifest: PlaybackManifest, targetMs: number): num
   const video = manifest.video.segments.find(
     (item) => item.startMs <= targetMs && item.startMs + item.durationMs > targetMs,
   );
-  if (!video) return targetMs;
-  const audio = manifest.audio.segments.find(
-    (item) => item.startMs <= targetMs && item.startMs + item.durationMs > targetMs,
-  );
-  return Math.max(video.startMs, audio?.startMs ?? video.startMs);
+  return video?.startMs ?? targetMs;
 }
 
 export async function runDecodePreroll(
