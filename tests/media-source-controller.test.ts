@@ -1,9 +1,34 @@
 import { expect, test } from "bun:test";
+import type { PlaybackManifest } from "../src/manifest";
 import { MediaSourceController } from "../src/media-source-controller";
 
 type ControllerState = {
   objectUrl: string | null;
+  mediaSource: MediaSource | null;
 };
+
+const audio = {
+  kind: "audio" as const,
+  mime: 'audio/mp4; codecs="mp4a.40.2"',
+  initUrl: "/audio/init",
+  segments: [],
+};
+
+function manifest(video: boolean): PlaybackManifest {
+  return {
+    durationMs: 120_000,
+    endOfStream: false,
+    audio,
+    video: video
+      ? {
+          kind: "video",
+          mime: 'video/mp4; codecs="avc1.640028"',
+          initUrl: "/video/init",
+          segments: [],
+        }
+      : null,
+  };
+}
 
 function videoElement(src: string) {
   const calls: string[] = [];
@@ -37,3 +62,51 @@ test("stale controller cannot detach a replacement media source", () => {
   expect(calls).toEqual([]);
   expect(video.src).toBe("blob:replacement");
 });
+
+test("attach reuses the open media source while replacing its source buffers", async () => {
+  const mediaSource = new FakeMediaSource();
+  mediaSource.addSourceBuffer();
+  mediaSource.addSourceBuffer();
+  const firstBuffers = [...mediaSource.sourceBuffers];
+  const video = {
+    src: "blob:stable",
+    removeAttribute: () => undefined,
+    load: () => undefined,
+  } as unknown as HTMLVideoElement;
+  const controller = new MediaSourceController(video);
+  const state = controller as unknown as ControllerState;
+  state.objectUrl = "blob:stable";
+  state.mediaSource = mediaSource as unknown as MediaSource;
+
+  await controller.attach(manifest(false));
+
+  expect(video.src).toBe("blob:stable");
+  expect(mediaSource.removed).toEqual(firstBuffers);
+  expect(mediaSource.sourceBuffers).toHaveLength(1);
+});
+
+class FakeMediaSource {
+  readonly sourceBuffers: SourceBuffer[] = [];
+  readonly removed: SourceBuffer[] = [];
+  duration = Number.NaN;
+  readyState: ReadyState = "open";
+
+  addEventListener(): void {}
+
+  addSourceBuffer(): SourceBuffer {
+    const buffer = {
+      updating: false,
+      buffered: { length: 0 },
+      abort: () => undefined,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    } as unknown as SourceBuffer;
+    this.sourceBuffers.push(buffer);
+    return buffer;
+  }
+
+  removeSourceBuffer(buffer: SourceBuffer): void {
+    this.removed.push(buffer);
+    this.sourceBuffers.splice(this.sourceBuffers.indexOf(buffer), 1);
+  }
+}

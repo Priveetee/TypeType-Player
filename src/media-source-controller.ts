@@ -24,7 +24,16 @@ export class MediaSourceController {
   }
 
   async attach(manifest: PlaybackManifest): Promise<void> {
+    const mediaSource = this.reusableMediaSource();
+    if (mediaSource) {
+      this.replaceSourceBuffers(mediaSource, manifest);
+      return;
+    }
     this.detach();
+    await this.attachNewMediaSource(manifest);
+  }
+
+  private async attachNewMediaSource(manifest: PlaybackManifest): Promise<void> {
     const mediaSource = new MediaSource();
     this.mediaSource = mediaSource;
     this.objectUrl = URL.createObjectURL(mediaSource);
@@ -36,6 +45,25 @@ export class MediaSourceController {
       mediaSource.addEventListener("sourceclose", sourceClose, { once: true });
     });
     if (this.mediaSource !== mediaSource) throw new DOMException("Operation aborted", "AbortError");
+    this.createSourceBuffers(mediaSource, manifest);
+  }
+
+  private reusableMediaSource(): MediaSource | null {
+    const mediaSource = this.mediaSource;
+    if (mediaSource?.readyState !== "open") return null;
+    if (!this.objectUrl || this.video.src !== this.objectUrl) return null;
+    return mediaSource;
+  }
+
+  private replaceSourceBuffers(mediaSource: MediaSource, manifest: PlaybackManifest): void {
+    this.destroyQueues();
+    for (const sourceBuffer of Array.from(mediaSource.sourceBuffers)) {
+      mediaSource.removeSourceBuffer(sourceBuffer);
+    }
+    this.createSourceBuffers(mediaSource, manifest);
+  }
+
+  private createSourceBuffers(mediaSource: MediaSource, manifest: PlaybackManifest): void {
     mediaSource.duration = manifest.durationMs > 0 ? manifest.durationMs / 1000 : Number.NaN;
     this.audioQueue = new AppendQueue(mediaSource.addSourceBuffer(manifest.audio.mime));
     this.videoQueue = manifest.video
@@ -79,18 +107,15 @@ export class MediaSourceController {
   }
 
   detach(): void {
-    this.audioQueue?.destroy();
-    this.videoQueue?.destroy();
+    this.destroyQueues();
     const ownsMediaElement = this.objectUrl !== null && this.video.src === this.objectUrl;
-    this.audioQueue = null;
-    this.videoQueue = null;
     this.mediaSource = null;
-    if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
-    this.objectUrl = null;
     if (ownsMediaElement) {
       this.video.removeAttribute("src");
       this.video.load();
     }
+    if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
+    this.objectUrl = null;
   }
 
   track(kind: TrackKind, manifest: PlaybackManifest): ManifestTrack | null {
@@ -109,5 +134,12 @@ export class MediaSourceController {
       });
     }
     return ranges;
+  }
+
+  private destroyQueues(): void {
+    this.audioQueue?.destroy();
+    this.videoQueue?.destroy();
+    this.audioQueue = null;
+    this.videoQueue = null;
   }
 }
