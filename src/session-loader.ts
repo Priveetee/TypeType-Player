@@ -192,7 +192,7 @@ function retryDelay(
 
 function handleWindow(window: Awaited<ReturnType<PlaybackClient["segments"]>>) {
   if (!window.terminalError) return window;
-  if (window.recoveryAction && window.retryVideoItags.length > 0) {
+  if (window.recoveryAction) {
     throw new PlaybackWindowRecoveryError(
       window.terminalError,
       window.recoveryAction,

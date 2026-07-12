@@ -37,6 +37,9 @@ export async function loadPlayerSession(args: Args): Promise<LoadedSession> {
     return await loadSelectedSession(args, args.response, selection);
   } catch (error) {
     if (!(error instanceof PlaybackWindowRecoveryError)) throw error;
+    if (error.recoveryAction === "retry_fresh_session") {
+      return recoverWithFreshSession(args, selection);
+    }
     return recoverWithFreshSessions(args, selection, error.retryVideoItags);
   }
 }
@@ -107,6 +110,24 @@ async function recoverWithFreshSessions(
   }
   if (lastError instanceof Error) throw lastError;
   throw new Error("Playback window recovery failed");
+}
+
+async function recoverWithFreshSession(
+  args: Args,
+  selection: TrackSelection,
+): Promise<LoadedSession> {
+  const response = await args.deps.playback.create(
+    {
+      videoId: args.config.videoId,
+      videoItag: selection.videoItag,
+      audioItag: selection.audioItag,
+      audioTrackId: selection.audioTrackId,
+      startTimeMs: args.startTimeMs,
+      audioOnly: args.config.audioOnly === true,
+    },
+    args.signal,
+  );
+  return loadSelectedSession(args, response, selection);
 }
 
 function isAbortError(error: unknown): boolean {

@@ -60,6 +60,22 @@ test("parses playback window recovery hints", () => {
   expect(window.retryVideoItags).toEqual([136, 135, 134]);
 });
 
+test("parses fresh session recovery without changing formats", () => {
+  const window = parsePlaybackWindow(
+    {
+      sessionId: "session",
+      generation: 1,
+      ready: false,
+      terminalError: "Expected UMP response, got content type: text/plain",
+      recoveryAction: "retry_fresh_session",
+      retryVideoItags: [],
+    },
+    "https://beta.typetype.video/api/sabr/playback/session/window",
+  );
+  expect(window.recoveryAction).toBe("retry_fresh_session");
+  expect(window.retryVideoItags).toEqual([]);
+});
+
 test("parses audio-only playback windows", () => {
   const window = parsePlaybackWindow(
     {

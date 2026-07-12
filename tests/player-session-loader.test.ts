@@ -160,3 +160,74 @@ test("recovers terminal seek windows with a fresh lower video itag session", asy
   expect(positionRequests[0]).toEqual([]);
   expect(filledWindows).toEqual([[120_000, 59_000, 90_000]]);
 });
+
+test("recovers invalid sabr context with a fresh session using the same formats", async () => {
+  const created: number[] = [];
+  const session = await loadPlayerSession({
+    deps: {
+      playback: {
+        create: async (request) => {
+          created.push(request.videoItag);
+          return response("fresh-session", request.videoId);
+        },
+        position: async (sessionId, request) => window(sessionId, request.generation, false),
+        prefetch: async (sessionId, request) =>
+          sessionId === "stale-session"
+            ? {
+                ...window(sessionId, request.generation, false),
+                terminalError: "Expected UMP response, got content type: text/plain",
+                recoveryAction: "retry_fresh_session",
+              }
+            : { ...window(sessionId, request.generation, true), manifest },
+        segments: async (sessionId, request) => ({
+          ...window(sessionId, request.generation, true),
+          manifest,
+        }),
+      },
+      media: { attach: async () => undefined, bufferedRanges: () => [] },
+      scheduler: {
+        reset: () => undefined,
+        appendInit: async () => undefined,
+        fill: async () => undefined,
+      },
+      policy: {
+        bufferGoalMs: 30_000,
+        backBufferMs: 30_000,
+        pollIntervalMs: 500,
+        manifestRefreshMs: 8_000,
+        manifestPollLimit: 2,
+        segmentPollLimit: 2,
+      },
+    },
+    config: {
+      endpoint: "https://beta.typetype.video/api",
+      videoId: "Vj6ReOur1Kk",
+      videoItag: 137,
+      audioItag: 140,
+      audioTrackId: "fr-FR.4",
+    },
+    video: { currentTime: 399.383 },
+    response: response("stale-session", "Vj6ReOur1Kk"),
+    current: null,
+    quality: undefined,
+    startTimeMs: 399_383,
+    signal: new AbortController().signal,
+  });
+
+  expect(created).toEqual([137]);
+  expect(session.response.sessionId).toBe("fresh-session");
+  expect(session.videoItag).toBe(137);
+});
+
+function window(sessionId: string, generation: number | null, ready: boolean): PlaybackWindow {
+  return {
+    sessionId,
+    generation,
+    ready,
+    retryAfterMs: null,
+    terminalError: null,
+    recoveryAction: null,
+    retryVideoItags: [],
+    manifest: null,
+  };
+}

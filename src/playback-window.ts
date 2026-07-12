@@ -23,7 +23,9 @@ export type PlaybackWindowRequest = {
 };
 
 /** Recovery operation requested when the current playback session becomes terminal. */
-export type PlaybackWindowRecoveryAction = "retry_fresh_session_lower_video_itag";
+export type PlaybackWindowRecoveryAction =
+  | "retry_fresh_session"
+  | "retry_fresh_session_lower_video_itag";
 
 /** Parsed backend response containing media tracks or a retry instruction. */
 export type PlaybackWindow = {
@@ -70,7 +72,9 @@ function arrayField(value: object, key: string): unknown[] {
 
 function recoveryActionField(value: object): PlaybackWindowRecoveryAction | null {
   const result = field(value, "recoveryAction");
-  return result === "retry_fresh_session_lower_video_itag" ? result : null;
+  return result === "retry_fresh_session" || result === "retry_fresh_session_lower_video_itag"
+    ? result
+    : null;
 }
 
 function integerArrayField(value: object, key: string): number[] {
