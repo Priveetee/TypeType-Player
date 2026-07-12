@@ -81,14 +81,16 @@ export class MediaSourceController {
   detach(): void {
     this.audioQueue?.destroy();
     this.videoQueue?.destroy();
-    const hadObjectUrl = this.objectUrl !== null;
+    const ownsMediaElement = this.objectUrl !== null && this.video.src === this.objectUrl;
     this.audioQueue = null;
     this.videoQueue = null;
     this.mediaSource = null;
     if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
     this.objectUrl = null;
-    this.video.removeAttribute("src");
-    if (hadObjectUrl) this.video.load();
+    if (ownsMediaElement) {
+      this.video.removeAttribute("src");
+      this.video.load();
+    }
   }
 
   track(kind: TrackKind, manifest: PlaybackManifest): ManifestTrack | null {

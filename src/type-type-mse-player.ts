@@ -182,7 +182,7 @@ import type {
     }
     this.deps.loop.start();
     emitManifest(this.emitter, session.response, session);
-    this.playerState.set("ready");
+    this.playerState.set(this.video.paused ? "ready" : "playing");
     return session;
   }
 }
