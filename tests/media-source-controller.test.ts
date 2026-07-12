@@ -5,7 +5,8 @@ import { MediaSourceController } from "../src/media-source-controller";
 type ControllerState = {
   objectUrl: string | null;
   mediaSource: MediaSource | null;
-  sourceBufferReuseSupported: boolean;
+  audioMime: string | null;
+  videoMime: string | null;
 };
 
 const audio = {
@@ -64,7 +65,7 @@ test("stale controller cannot detach a replacement media source", () => {
   expect(video.src).toBe("blob:replacement");
 });
 
-test("attach reuses the open media source while replacing its source buffers", async () => {
+test("attach reuses source buffers when the track layout is compatible", async () => {
   const mediaSource = new FakeMediaSource();
   mediaSource.addSourceBuffer();
   mediaSource.addSourceBuffer();
@@ -78,17 +79,18 @@ test("attach reuses the open media source while replacing its source buffers", a
   const state = controller as unknown as ControllerState;
   state.objectUrl = "blob:stable";
   state.mediaSource = mediaSource as unknown as MediaSource;
+  state.audioMime = manifest(true).audio.mime;
+  state.videoMime = manifest(true).video?.mime ?? null;
 
-  await controller.attach(manifest(false));
+  await controller.attach(manifest(true));
 
   expect(video.src).toBe("blob:stable");
-  expect(mediaSource.removed).toEqual(firstBuffers);
-  expect(mediaSource.sourceBuffers).toHaveLength(1);
+  expect(mediaSource.removed).toEqual([]);
+  expect(mediaSource.sourceBuffers).toEqual(firstBuffers);
 });
 
-test("attach remembers when dynamic source buffers exceed browser quota", async () => {
+test("attach replaces the media source when the track layout changes", async () => {
   const current = new FakeMediaSource();
-  current.rejectAddsAfterRemoval = true;
   current.addSourceBuffer();
   current.addSourceBuffer();
   const replacements: FakeMediaSource[] = [];
@@ -106,13 +108,14 @@ test("attach remembers when dynamic source buffers exceed browser quota", async 
   const state = controller as unknown as ControllerState;
   state.objectUrl = "blob:stable";
   state.mediaSource = current as unknown as MediaSource;
+  state.audioMime = manifest(true).audio.mime;
+  state.videoMime = manifest(true).video?.mime ?? null;
 
   await controller.attach(manifest(false));
   await controller.attach(manifest(true));
 
-  expect(state.sourceBufferReuseSupported).toBeFalse();
-  expect(controller.supportsTrackLayoutChanges()).toBeFalse();
   expect(replacements).toHaveLength(2);
+  expect(current.removed).toEqual([]);
   expect(replacements[0].removed).toEqual([]);
   expect(video.src).toBe("blob:replacement-2");
 });
@@ -120,7 +123,6 @@ test("attach remembers when dynamic source buffers exceed browser quota", async 
 class FakeMediaSource {
   readonly sourceBuffers: SourceBuffer[] = [];
   readonly removed: SourceBuffer[] = [];
-  rejectAddsAfterRemoval = false;
   duration = Number.NaN;
   readyState: ReadyState;
   private readonly listeners = new Map<string, () => void>();
@@ -134,9 +136,6 @@ class FakeMediaSource {
   }
 
   addSourceBuffer(): SourceBuffer {
-    if (this.rejectAddsAfterRemoval && this.removed.length > 0) {
-      throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
-    }
     const buffer = {
       updating: false,
       buffered: { length: 0 },
