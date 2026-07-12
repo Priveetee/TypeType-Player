@@ -39,6 +39,16 @@ export class AppendQueue {
     return this.sourceBuffer.buffered;
   }
 
+  reset(): Promise<void> {
+    const buffered = this.sourceBuffer.buffered;
+    const range =
+      buffered.length > 0
+        ? { start: buffered.start(0), end: buffered.end(buffered.length - 1) }
+        : null;
+    this.clear();
+    return range ? this.remove(range.start, range.end) : Promise.resolve();
+  }
+
   clear(): void {
     const error = new DOMException("Operation aborted", "AbortError");
     this.current?.reject(error);

@@ -25,7 +25,8 @@ export class MediaSourceController {
   private audioQueue: AppendQueue | null = null;
   private videoQueue: AppendQueue | null = null;
   private mediaSource: MediaSource | null = null;
-  private sourceBufferReuseSupported = true;
+  private audioMime: string | null = null;
+  private videoMime: string | null = null;
 
   constructor(
     private readonly video: HTMLVideoElement,
@@ -41,14 +42,9 @@ export class MediaSourceController {
 
   async attach(manifest: PlaybackManifest): Promise<void> {
     const mediaSource = this.reusableMediaSource();
-    if (mediaSource && this.sourceBufferReuseSupported) {
-      try {
-        this.replaceSourceBuffers(mediaSource, manifest);
-        return;
-      } catch (error) {
-        if (!isSourceBufferQuotaError(error)) throw error;
-        this.sourceBufferReuseSupported = false;
-      }
+    if (mediaSource && this.hasCompatibleLayout(manifest)) {
+      await this.resetSourceBuffers(mediaSource, manifest);
+      return;
     }
     this.detach();
     await this.attachNewMediaSource(manifest);
@@ -76,12 +72,16 @@ export class MediaSourceController {
     return mediaSource;
   }
 
-  private replaceSourceBuffers(mediaSource: MediaSource, manifest: PlaybackManifest): void {
-    this.destroyQueues();
-    for (const sourceBuffer of Array.from(mediaSource.sourceBuffers)) {
-      mediaSource.removeSourceBuffer(sourceBuffer);
-    }
-    this.createSourceBuffers(mediaSource, manifest);
+  private hasCompatibleLayout(manifest: PlaybackManifest): boolean {
+    return this.audioMime === manifest.audio.mime && this.videoMime === manifest.video?.mime;
+  }
+
+  private async resetSourceBuffers(
+    mediaSource: MediaSource,
+    manifest: PlaybackManifest,
+  ): Promise<void> {
+    await Promise.all([this.audioQueue?.reset(), this.videoQueue?.reset()]);
+    mediaSource.duration = manifest.durationMs > 0 ? manifest.durationMs / 1000 : Number.NaN;
   }
 
   private createSourceBuffers(mediaSource: MediaSource, manifest: PlaybackManifest): void {
@@ -90,6 +90,8 @@ export class MediaSourceController {
     this.videoQueue = manifest.video
       ? new AppendQueue(mediaSource.addSourceBuffer(manifest.video.mime))
       : null;
+    this.audioMime = manifest.audio.mime;
+    this.videoMime = manifest.video?.mime ?? null;
   }
 
   append(kind: TrackKind, data: ArrayBuffer): Promise<void> {
@@ -127,10 +129,6 @@ export class MediaSourceController {
     ];
   }
 
-  supportsTrackLayoutChanges(): boolean {
-    return this.sourceBufferReuseSupported;
-  }
-
   detach(): void {
     this.destroyQueues();
     const ownsMediaElement = this.objectUrl !== null && this.video.src === this.objectUrl;
@@ -166,9 +164,7 @@ export class MediaSourceController {
     this.videoQueue?.destroy();
     this.audioQueue = null;
     this.videoQueue = null;
+    this.audioMime = null;
+    this.videoMime = null;
   }
-}
-
-function isSourceBufferQuotaError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === "QuotaExceededError";
 }

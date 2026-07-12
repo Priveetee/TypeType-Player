@@ -25,6 +25,7 @@ import type {
   private readonly operation = new PlayerOperation();
   private session: LoadedSession | null = null;
   private audioOnly: boolean;
+  private trackLayoutSwitches = 0;
   private destroyed = false;
 
   /** Creates a player without starting network or media operations. */ constructor(
@@ -117,13 +118,8 @@ import type {
       this.audioOnly = audioOnly;
       return;
     }
-    if (
-      audioOnly &&
-      this.session &&
-      !this.session.audioOnly &&
-      !this.deps.media.supportsTrackLayoutChanges()
-    ) {
-      this.audioOnly = true;
+    if (this.session && this.trackLayoutSwitches >= 2) {
+      this.audioOnly = audioOnly;
       return;
     }
     this.playbackIntent.capture(this.video.paused, this.playerState.value === "seeking");
@@ -137,6 +133,7 @@ import type {
         (target) => this.performSeek(target, undefined, audioOnly),
         () => this.operation.abort(),
       );
+      this.trackLayoutSwitches += 1;
     } catch (error) {
       if (this.audioOnly === audioOnly) this.audioOnly = previous;
       throw error;
