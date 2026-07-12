@@ -39,6 +39,7 @@ test("recovers terminal seek windows with a fresh lower video itag session", asy
   const prefetchRequests: PlaybackWindowRequest[] = [];
   const segmentRequests: PlaybackWindowRequest[] = [];
   const positionRequests: PlaybackWindowRequest["bufferedRanges"][] = [];
+  const filledWindows: Array<[number, number, number]> = [];
   const video = { currentTime: 0 };
   const session = await loadPlayerSession({
     deps: {
@@ -116,7 +117,14 @@ test("recovers terminal seek windows with a fresh lower video itag session", asy
         attach: async (nextManifest) => attached.push(nextManifest),
         bufferedRanges: () => [{ kind: "video", startMs: 0, endMs: 10_000 }],
       },
-      scheduler: { reset: () => undefined, appendInit: async () => undefined },
+      scheduler: {
+        reset: () => undefined,
+        appendInit: async () => undefined,
+        fill: async (nextManifest, startMs, endMs) => {
+          filledWindows.push([nextManifest.durationMs, startMs, endMs]);
+          expect(video.currentTime).toBe(0);
+        },
+      },
       policy: {
         bufferGoalMs: 30_000,
         backBufferMs: 30_000,
@@ -150,4 +158,5 @@ test("recovers terminal seek windows with a fresh lower video itag session", asy
   expect(prefetchRequests.map((request) => request.videoItag)).toEqual([137, 136]);
   expect(segmentRequests.map((request) => request.videoItag)).toEqual([136]);
   expect(positionRequests[0]).toEqual([]);
+  expect(filledWindows).toEqual([[120_000, 60_000, 90_000]]);
 });

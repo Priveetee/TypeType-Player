@@ -20,7 +20,7 @@ type Args = {
 type PlayerSessionDeps = {
   playback: Pick<PlayerDeps["playback"], "create" | "position" | "prefetch" | "segments">;
   media: Pick<PlayerDeps["media"], "attach" | "bufferedRanges">;
-  scheduler: Pick<PlayerDeps["scheduler"], "appendInit" | "reset">;
+  scheduler: Pick<PlayerDeps["scheduler"], "appendInit" | "fill" | "reset">;
   policy: PlayerDeps["policy"];
 };
 
@@ -49,12 +49,12 @@ function resolveSelection(args: Args): TrackSelection {
   };
 }
 
-function loadSelectedSession(
+async function loadSelectedSession(
   args: Args,
   response: LoadedSession["response"],
   selection: TrackSelection,
 ): Promise<LoadedSession> {
-  return loadPlaybackSession({
+  const session = await loadPlaybackSession({
     playback: args.deps.playback,
     media: args.deps.media,
     scheduler: args.deps.scheduler,
@@ -68,6 +68,13 @@ function loadSelectedSession(
     policy: args.deps.policy,
     signal: args.signal,
   });
+  await args.deps.scheduler.fill(
+    session.manifest,
+    args.startTimeMs,
+    args.startTimeMs + args.deps.policy.bufferGoalMs,
+    args.signal,
+  );
+  return session;
 }
 
 async function recoverWithFreshSessions(
