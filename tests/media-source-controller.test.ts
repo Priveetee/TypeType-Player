@@ -89,7 +89,7 @@ test("attach reuses source buffers when the track layout is compatible", async (
   expect(mediaSource.sourceBuffers).toEqual(firstBuffers);
 });
 
-test("attach replaces the media source when the track layout changes", async () => {
+test("attach releases each old layout before repeated track changes", async () => {
   const current = new FakeMediaSource();
   current.addSourceBuffer();
   current.addSourceBuffer();
@@ -111,13 +111,16 @@ test("attach replaces the media source when the track layout changes", async () 
   state.audioMime = manifest(true).audio.mime;
   state.videoMime = manifest(true).video?.mime ?? null;
 
-  await controller.attach(manifest(false));
-  await controller.attach(manifest(true));
+  for (let index = 0; index < 6; index += 1) {
+    await controller.attach(manifest(index % 2 !== 0));
+  }
 
-  expect(replacements).toHaveLength(2);
-  expect(current.removed).toEqual([]);
-  expect(replacements[0].removed).toEqual([]);
-  expect(video.src).toBe("blob:replacement-2");
+  expect(replacements).toHaveLength(6);
+  expect(current.removed).toHaveLength(2);
+  for (const replacement of replacements.slice(0, -1)) {
+    expect(replacement.removed.length).toBeGreaterThan(0);
+  }
+  expect(video.src).toBe("blob:replacement-6");
 });
 
 class FakeMediaSource {
