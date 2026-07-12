@@ -40,16 +40,20 @@ export async function runDecodePreroll(
   video.muted = true;
   video.playbackRate = PREROLL_RATE;
   video.autoplay = true;
+  let pausedForSnap = false;
   try {
     await video.play();
     await waitForTarget(video, targetMs, signal);
+    video.pause();
+    pausedForSnap = true;
     await snapToTarget(video, targetMs, signal);
   } finally {
     video.playbackRate = playbackRate;
     video.muted = muted;
     video.autoplay = autoplay;
-    if (!resumePlayback) video.pause();
-    else if (!signal.aborted) await video.play();
+    if (!resumePlayback) {
+      if (!pausedForSnap) video.pause();
+    } else if (!signal.aborted) await video.play();
   }
 }
 
