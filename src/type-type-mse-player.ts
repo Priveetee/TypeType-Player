@@ -24,6 +24,7 @@ import type {
   private readonly seekController = new SeekController();
   private readonly operation = new PlayerOperation();
   private session: LoadedSession | null = null;
+  private pendingPrerollTargetMs: number | null = null;
   private audioOnly: boolean;
   private destroyed = false;
 
@@ -31,6 +32,8 @@ import type {
     private readonly video: HTMLVideoElement,
     private readonly config: TypeTypeMseConfig,
   ) {
+    this.video.crossOrigin = "anonymous";
+    this.video.playsInline = true;
     this.audioOnly = config.audioOnly === true;
     this.deps = createPlayerDeps({
       video,
@@ -75,6 +78,13 @@ import type {
     ensurePlayerAlive(this.destroyed);
     this.playbackIntent.play();
     if (!this.session || this.playerState.value === "loading") return;
+    if (this.pendingPrerollTargetMs !== null) {
+      const targetMs = this.pendingPrerollTargetMs;
+      await runDecodePreroll(this.video, targetMs, true, this.operation.signal);
+      this.pendingPrerollTargetMs = null;
+      this.playerState.set("playing");
+      return;
+    }
     await this.video.play();
     this.playerState.set("playing");
   }
@@ -145,6 +155,7 @@ import type {
     this.destroyed = true;
     this.operation.abort();
     this.seekController.reset();
+    this.pendingPrerollTargetMs = null;
     this.deps.destroy();
     this.emitter.clear();
     this.playerState.destroy();
@@ -215,9 +226,17 @@ import type {
     this.session = session;
     await this.deps.loop.fillOnce();
     if (startTimeMs > startMs) {
-      await runDecodePreroll(this.video, startTimeMs, this.playbackIntent.shouldResume, signal);
+      if (this.playbackIntent.shouldResume) {
+        await runDecodePreroll(this.video, startTimeMs, true, signal);
+        this.pendingPrerollTargetMs = null;
+      } else {
+        this.pendingPrerollTargetMs = startTimeMs;
+      }
     } else if (this.playbackIntent.shouldResume) {
+      this.pendingPrerollTargetMs = null;
       await this.video.play();
+    } else {
+      this.pendingPrerollTargetMs = null;
     }
     this.deps.loop.start();
     emitManifest(this.emitter, session.response, session);
