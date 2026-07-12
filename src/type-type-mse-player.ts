@@ -24,12 +24,14 @@ import type {
   private readonly seekController = new SeekController();
   private readonly operation = new PlayerOperation();
   private session: LoadedSession | null = null;
+  private audioOnly: boolean;
   private destroyed = false;
 
   /** Creates a player without starting network or media operations. */ constructor(
     private readonly video: HTMLVideoElement,
     private readonly config: TypeTypeMseConfig,
   ) {
+    this.audioOnly = config.audioOnly === true;
     this.deps = createPlayerDeps({
       video,
       config,
@@ -63,7 +65,7 @@ import type {
         audioItag: this.config.audioItag,
         audioTrackId: this.config.audioTrackId,
         startTimeMs,
-        audioOnly: this.config.audioOnly === true,
+        audioOnly: this.audioOnly,
       },
       signal,
     );
@@ -107,6 +109,27 @@ import type {
     );
   }
 
+  /** Switches between audio-only and audiovisual playback on the active session. */
+  async setAudioOnly(audioOnly: boolean): Promise<void> {
+    ensurePlayerAlive(this.destroyed);
+    if (this.audioOnly === audioOnly) return;
+    this.playbackIntent.capture(this.video.paused, this.playerState.value === "seeking");
+    const previous = this.audioOnly;
+    const targetMs = currentTimeMs(this.video);
+    this.audioOnly = audioOnly;
+    try {
+      await this.seekController.seek(
+        targetMs,
+        `mode:${targetMs}:${audioOnly}`,
+        (target) => this.performSeek(target, undefined, audioOnly),
+        () => this.operation.abort(),
+      );
+    } catch (error) {
+      if (this.audioOnly === audioOnly) this.audioOnly = previous;
+      throw error;
+    }
+  }
+
   /** Returns current state, timing, buffer, and session diagnostics. */
   snapshot(): TypeTypeMseSnapshot {
     return createSnapshot(this.video, this.playerState.value, this.session);
@@ -124,7 +147,11 @@ import type {
   }
 
   /** Executes the latest coalesced seek or quality operation. */
-  private async performSeek(positionMs: number, quality?: TypeTypeMseQuality): Promise<void> {
+  private async performSeek(
+    positionMs: number,
+    quality?: TypeTypeMseQuality,
+    audioOnly = this.audioOnly,
+  ): Promise<void> {
     ensurePlayerAlive(this.destroyed);
     const current = this.session;
     if (!current) throw new Error("Player is not loaded");
@@ -138,10 +165,17 @@ import type {
       const response = await this.deps.playback.seek(
         current.response.sessionId,
         targetMs,
-        { ...quality, audioOnly: this.config.audioOnly },
+        { ...quality, audioOnly },
         signal,
       );
-      const session = await this.switchSession(response, targetMs, revision, signal, quality);
+      const session = await this.switchSession(
+        response,
+        targetMs,
+        revision,
+        signal,
+        quality,
+        audioOnly,
+      );
       if (quality) emitQuality(this.emitter, session);
     } catch (error) {
       if (!this.destroyed && this.session === current) {
@@ -159,10 +193,11 @@ import type {
     revision: number,
     signal: AbortSignal,
     quality?: TypeTypeMseQuality,
+    audioOnly = this.audioOnly,
   ): Promise<LoadedSession> {
     const session = await loadPlayerSession({
       deps: this.deps,
-      config: this.config,
+      config: { ...this.config, audioOnly },
       video: this.video,
       response,
       current: this.session,

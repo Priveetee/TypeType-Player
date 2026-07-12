@@ -50,6 +50,7 @@ await engine.load();
 await engine.play();
 
 await engine.setQuality({ videoItag: 248 });
+await engine.setAudioOnly(true);
 ```
 
 ## Diagnostics
