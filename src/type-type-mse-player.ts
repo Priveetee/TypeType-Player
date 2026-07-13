@@ -9,6 +9,7 @@ import { createSnapshot, currentTimeMs, type TypeTypeMseSnapshot } from "./playe
 import { PlayerState } from "./player-state";
 import { SeekController } from "./seek-controller";
 import type { LoadedSession } from "./session-loader";
+import { shouldApplySessionPosition } from "./session-position";
 import type {
   TypeTypeMseConfig,
   TypeTypeMseEventType,
@@ -238,7 +239,9 @@ import type {
     });
     this.operation.ensureCurrent(this.destroyed, revision);
     const startMs = decodeStartMs(session.manifest, startTimeMs);
-    if (startTimeMs > 0) this.video.currentTime = startMs / 1000;
+    if (shouldApplySessionPosition(startTimeMs, finalizePausedSeek)) {
+      this.video.currentTime = startMs / 1000;
+    }
     this.session = session;
     await this.deps.loop.fillOnce();
     if (startTimeMs > startMs) {
