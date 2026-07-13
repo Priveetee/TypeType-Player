@@ -35,7 +35,7 @@ export class PlaybackLoop {
       this.args.policy.pollIntervalMs,
     );
     this.manifestTimer = setInterval(
-      () => this.requestManifestRefresh(),
+      () => this.requestManifestRefreshIfNeeded(),
       this.args.policy.manifestRefreshMs,
     );
   }
@@ -53,7 +53,8 @@ export class PlaybackLoop {
     this.filling = true;
     try {
       const currentMs = currentTimeMs(this.args.video);
-      const goalMs = currentMs + this.args.policy.bufferGoalMs;
+      const bufferGoalMs = this.args.policy.bufferGoalMs;
+      const goalMs = currentMs + bufferGoalMs;
       await this.args.scheduler.fill(session.manifest, currentMs, goalMs, this.args.signal());
       await this.args.media.trim(currentMs, this.args.policy.backBufferMs);
       const bufferedEndMs = this.args.bufferedEndMs();
@@ -66,7 +67,9 @@ export class PlaybackLoop {
         this.stop();
         return;
       }
-      if (bufferedEndMs < goalMs) this.requestManifestRefresh();
+      if (bufferedEndMs < currentMs + refreshThresholdMs(bufferGoalMs)) {
+        this.requestManifestRefresh();
+      }
     } finally {
       this.filling = false;
     }
@@ -97,8 +100,18 @@ export class PlaybackLoop {
     });
   }
 
+  private requestManifestRefreshIfNeeded(): void {
+    const currentMs = currentTimeMs(this.args.video);
+    const thresholdMs = refreshThresholdMs(this.args.policy.bufferGoalMs);
+    if (this.args.bufferedEndMs() < currentMs + thresholdMs) this.requestManifestRefresh();
+  }
+
   private fail(error: unknown): void {
     this.stop();
     this.args.error(error instanceof Error ? error : new Error("SABR playback failed"));
   }
+}
+
+function refreshThresholdMs(bufferGoalMs: number): number {
+  return Math.min(bufferGoalMs, Math.max(5_000, Math.round((bufferGoalMs * 2) / 3)));
 }

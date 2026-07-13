@@ -27,7 +27,7 @@ function window(request: PlaybackWindowRequest): PlaybackWindow {
   };
 }
 
-test("refreshes rapidly only while the playback buffer is below goal", async () => {
+test("refreshes rapidly only while the playback buffer is below its low watermark", async () => {
   let bufferedEndMs = 5_000;
   let positionCalls = 0;
   const session: LoadedSession = {
@@ -76,10 +76,15 @@ test("refreshes rapidly only while the playback buffer is below goal", async () 
   await Bun.sleep(0);
   expect(positionCalls).toBe(1);
 
-  bufferedEndMs = 30_000;
+  bufferedEndMs = 20_000;
   await loop.fillOnce();
   await Bun.sleep(0);
   expect(positionCalls).toBe(1);
+
+  bufferedEndMs = 19_999;
+  await loop.fillOnce();
+  await Bun.sleep(0);
+  expect(positionCalls).toBe(2);
 });
 
 test("closes the media source after appending the final window", async () => {
