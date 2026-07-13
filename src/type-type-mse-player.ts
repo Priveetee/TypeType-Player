@@ -25,6 +25,7 @@ import type {
   private readonly operation = new PlayerOperation();
   private session: LoadedSession | null = null;
   private pendingPrerollTargetMs: number | null = null;
+  private loadTask: Promise<void> | null = null;
   private audioOnly: boolean;
   private destroyed = false;
 
@@ -55,8 +56,19 @@ import type {
     return this.emitter.on(type, listener);
   }
 
-  /** Creates the initial playback session and fills the first media window. */ async load(): Promise<void> {
+  /** Creates the initial playback session and fills the first media window. */ load(): Promise<void> {
     ensurePlayerAlive(this.destroyed);
+    const task = this.loadInitialSession();
+    this.loadTask = task;
+    const clearTask = () => {
+      if (this.loadTask === task) this.loadTask = null;
+    };
+    void task.then(clearTask, clearTask);
+    return task;
+  }
+
+  /** Creates and attaches the initial SABR session. */
+  private async loadInitialSession(): Promise<void> {
     const revision = this.operation.next();
     const signal = this.operation.signal;
     this.playerState.set("loading");
@@ -122,15 +134,17 @@ import type {
   /** Switches between audio-only and audiovisual playback on the active session. */
   async setAudioOnly(audioOnly: boolean): Promise<void> {
     ensurePlayerAlive(this.destroyed);
-    if (this.audioOnly === audioOnly) return;
+    if (this.audioOnly === audioOnly && this.session?.audioOnly === audioOnly) return;
+    const previous = this.audioOnly;
+    this.audioOnly = audioOnly;
+    if (!this.session && this.loadTask) await this.loadTask;
+    ensurePlayerAlive(this.destroyed);
+    if (this.audioOnly !== audioOnly) return;
     if (this.session?.audioOnly === audioOnly) {
-      this.audioOnly = audioOnly;
       return;
     }
     this.playbackIntent.capture(this.video.paused, this.playerState.value === "seeking");
-    const previous = this.audioOnly;
     const targetMs = currentTimeMs(this.video);
-    this.audioOnly = audioOnly;
     try {
       await this.seekController.seek(
         targetMs,
