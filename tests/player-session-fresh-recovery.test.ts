@@ -7,6 +7,7 @@ import { loadPlayerSession } from "../src/player-session-loader";
 
 Object.defineProperty(globalThis, "MediaSource", {
   value: { isTypeSupported: (mime: string) => mime.length > 0 },
+  configurable: true,
 });
 
 const manifest: PlaybackManifest = {

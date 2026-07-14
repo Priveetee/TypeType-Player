@@ -11,6 +11,7 @@ Object.defineProperty(globalThis, "MediaSource", {
       return mime.length > 0;
     },
   },
+  configurable: true,
 });
 
 const manifest: PlaybackManifest = {
