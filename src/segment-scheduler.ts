@@ -8,6 +8,7 @@ import type { TrackKind } from "./types";
 export class SegmentScheduler {
   private readonly appended = new Set<string>();
   private readonly appendedEndMs = new Map<TrackKind, number>();
+  private revision = 0;
 
   constructor(
     private readonly http: HttpClient,
@@ -17,13 +18,17 @@ export class SegmentScheduler {
   ) {}
 
   reset(): void {
+    this.revision += 1;
     this.appended.clear();
     this.appendedEndMs.clear();
   }
 
   async appendInit(manifest: PlaybackManifest, signal?: AbortSignal): Promise<void> {
-    const tasks = [this.appendUrl("audio", manifest.audio.initUrl, 0, 0, signal)];
-    if (manifest.video) tasks.push(this.appendUrl("video", manifest.video.initUrl, 0, 0, signal));
+    const revision = this.revision;
+    const tasks = [this.appendUrl("audio", manifest.audio.initUrl, 0, 0, revision, signal)];
+    if (manifest.video) {
+      tasks.push(this.appendUrl("video", manifest.video.initUrl, 0, 0, revision, signal));
+    }
     await Promise.all(tasks);
   }
 
@@ -33,9 +38,14 @@ export class SegmentScheduler {
     goalMs: number,
     signal?: AbortSignal,
   ): Promise<void> {
-    const tasks = [this.fillTrack("audio", manifest.audio.segments, currentMs, goalMs, signal)];
+    const revision = this.revision;
+    const tasks = [
+      this.fillTrack("audio", manifest.audio.segments, currentMs, goalMs, revision, signal),
+    ];
     if (manifest.video) {
-      tasks.push(this.fillTrack("video", manifest.video.segments, currentMs, goalMs, signal));
+      tasks.push(
+        this.fillTrack("video", manifest.video.segments, currentMs, goalMs, revision, signal),
+      );
     }
     await Promise.all(tasks);
   }
@@ -45,6 +55,7 @@ export class SegmentScheduler {
     segments: ManifestSegment[],
     currentMs: number,
     goalMs: number,
+    revision: number,
     signal?: AbortSignal,
   ): Promise<void> {
     const candidates = segments
@@ -56,7 +67,14 @@ export class SegmentScheduler {
       const segmentEndMs = segment.startMs + segment.durationMs;
       const appendedEndMs = this.appendedEndMs.get(kind);
       if (appendedEndMs !== undefined && segmentEndMs <= appendedEndMs) continue;
-      await this.appendUrl(kind, segment.url, segment.startMs, segment.durationMs, signal);
+      await this.appendUrl(
+        kind,
+        segment.url,
+        segment.startMs,
+        segment.durationMs,
+        revision,
+        signal,
+      );
       this.appendedEndMs.set(kind, Math.max(appendedEndMs ?? 0, segmentEndMs));
     }
   }
@@ -66,14 +84,23 @@ export class SegmentScheduler {
     url: string,
     startMs: number,
     durationMs: number,
+    revision: number,
     signal?: AbortSignal,
   ): Promise<void> {
-    if (signal?.aborted) throw new DOMException("Operation aborted", "AbortError");
+    this.ensureActive(revision, signal);
     const key = `${kind}:${url}`;
     if (this.appended.has(key)) return;
     const bytes = await fetchSegmentBytes(this.http, url, this.pollLimit, signal);
+    this.ensureActive(revision, signal);
     await this.media.append(kind, bytes);
+    this.ensureActive(revision, signal);
     this.appended.add(key);
     this.emitter.emit({ type: "segment", kind, url, startMs, durationMs });
+  }
+
+  private ensureActive(revision: number, signal?: AbortSignal): void {
+    if (revision !== this.revision || signal?.aborted) {
+      throw new DOMException("Operation aborted", "AbortError");
+    }
   }
 }

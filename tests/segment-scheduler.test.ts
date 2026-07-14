@@ -44,3 +44,30 @@ test("never appends a late segment behind the buffered track edge", async () => 
 
   expect(appended).toEqual(["/41", "/42", "/43"]);
 });
+
+test("rejects fetched bytes from a superseded scheduler revision", async () => {
+  let releaseResponse: ((response: Response) => void) | null = null;
+  const pendingResponse = new Promise<Response>((resolve) => {
+    releaseResponse = resolve;
+  });
+  const http = { response: async () => pendingResponse } as HttpClient;
+  let appends = 0;
+  const media = {
+    append: async () => {
+      appends += 1;
+    },
+  } as MediaSourceController;
+  const scheduler = new SegmentScheduler(http, media, { emit: () => undefined } as EventEmitter, 1);
+  const fill = scheduler.fill(
+    manifest([{ url: "/old", startMs: 0, durationMs: 10_000 }]),
+    0,
+    10_000,
+  );
+  await Bun.sleep(0);
+  scheduler.reset();
+  if (!releaseResponse) throw new Error("Deferred response was not initialized");
+  releaseResponse(new Response(new Uint8Array([1])));
+
+  await expect(fill).rejects.toHaveProperty("name", "AbortError");
+  expect(appends).toBe(0);
+});

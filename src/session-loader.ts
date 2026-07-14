@@ -74,8 +74,10 @@ async function attachSession(
   manifest: PlaybackManifest,
 ): Promise<LoadedSession> {
   if (!MediaSourceController.supported(manifest)) throw new Error("MSE codecs are not supported");
+  ensureNotAborted(args.signal);
   args.scheduler.reset();
   await args.media.attach(manifest);
+  ensureNotAborted(args.signal);
   await args.scheduler.appendInit(manifest, args.signal);
   return {
     response,
@@ -85,6 +87,10 @@ async function attachSession(
     audioTrackId: args.audioTrackId,
     audioOnly: args.audioOnly,
   };
+}
+
+function ensureNotAborted(signal: AbortSignal): void {
+  if (signal.aborted) throw new DOMException("Operation aborted", "AbortError");
 }
 
 export async function refreshPlaybackWindow(
@@ -102,6 +108,7 @@ export async function refreshPlaybackWindow(
     request,
   );
   if (!window?.manifest) return;
+  ensureNotAborted(signal);
   session.response = { ...session.response, generation: window.generation };
   session.manifest = window.manifest;
 }

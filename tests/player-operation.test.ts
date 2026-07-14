@@ -14,6 +14,8 @@ test("advances revisions and aborts the previous operation", () => {
   expect(initialSignal.aborted).toBe(true);
   expect(firstSignal.aborted).toBe(true);
   expect(operation.signal.aborted).toBe(false);
+  expect(operation.isCurrent(firstRevision)).toBe(false);
+  expect(operation.isCurrent(secondRevision)).toBe(true);
   expect(() => operation.ensureCurrent(false, firstRevision)).toThrow("Operation aborted");
   expect(() => operation.ensureCurrent(false, secondRevision)).not.toThrow();
 });
@@ -23,4 +25,13 @@ test("rejects current revisions after player destruction", () => {
   const revision = operation.next();
 
   expect(() => operation.ensureCurrent(true, revision)).toThrow("Operation aborted");
+});
+
+test("rejects an aborted current revision", () => {
+  const operation = new PlayerOperation();
+  const revision = operation.next();
+  operation.abort();
+
+  expect(operation.isCurrent(revision)).toBe(false);
+  expect(() => operation.ensureCurrent(false, revision)).toThrow("Operation aborted");
 });

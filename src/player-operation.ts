@@ -21,8 +21,12 @@ export class PlayerOperation {
     this.controller.abort();
   }
 
+  isCurrent(expectedRevision: number): boolean {
+    return this.revision === expectedRevision && !this.controller.signal.aborted;
+  }
+
   ensureCurrent(destroyed: boolean, expectedRevision: number): void {
-    if (destroyed || this.revision !== expectedRevision) {
+    if (destroyed || this.revision !== expectedRevision || this.controller.signal.aborted) {
       throw new DOMException("Operation aborted", "AbortError");
     }
   }

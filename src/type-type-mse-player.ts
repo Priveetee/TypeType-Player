@@ -1,14 +1,16 @@
 import { decodeStartMs, runDecodePreroll } from "./decode-preroll";
 import { EventEmitter } from "./event-emitter";
 import { PlaybackIntent } from "./playback-intent";
+import type { PlaybackLoopFailureContext } from "./playback-loop";
 import { createPlayerDeps, type PlayerDeps } from "./player-deps";
 import { emitManifest, emitQuality } from "./player-events";
 import { ensurePlayerAlive, PlayerOperation } from "./player-operation";
-import { loadPlayerSession } from "./player-session-loader";
+import { PlaybackRecovery, recoverPlaybackSession } from "./player-recovery";
+import { loadPlayerSession, loadPlayerSessionOnce } from "./player-session-loader";
 import { createSnapshot, currentTimeMs, type TypeTypeMseSnapshot } from "./player-snapshot";
 import { PlayerState } from "./player-state";
 import { SeekController } from "./seek-controller";
-import type { LoadedSession } from "./session-loader";
+import { type LoadedSession, PlaybackWindowRecoveryError } from "./session-loader";
 import { shouldApplySessionPosition } from "./session-position";
 import type {
   TypeTypeMseConfig,
@@ -24,9 +26,11 @@ import type {
   private readonly playbackIntent = new PlaybackIntent();
   private readonly seekController = new SeekController();
   private readonly operation = new PlayerOperation();
+  private readonly playbackRecovery = new PlaybackRecovery();
   private session: LoadedSession | null = null;
   private pendingPrerollTargetMs: number | null = null;
   private loadTask: Promise<void> | null = null;
+  private sessionTransition: Promise<void> = Promise.resolve();
   private audioOnly: boolean;
   private destroyed = false;
 
@@ -44,9 +48,9 @@ import type {
       session: () => this.session,
       signal: () => this.operation.signal,
       state: (state) => this.playerState.set(state),
-      error: (error) => {
-        if (!this.destroyed) this.playerState.fail(error);
-      },
+      error: (error) => this.reportPlaybackFailure(error),
+      progress: (positionMs) => this.playbackRecovery.observeProgress(positionMs),
+      loopError: (error, context) => this.handlePlaybackLoopError(error, context),
     });
     this.deps.mediaEvents.start();
   }
@@ -70,6 +74,7 @@ import type {
 
   /** Creates and attaches the initial SABR session. */
   private async loadInitialSession(): Promise<void> {
+    this.resetPlaybackRecovery();
     const revision = this.operation.next();
     const signal = this.operation.signal;
     this.playerState.set("loading");
@@ -185,6 +190,7 @@ import type {
     ensurePlayerAlive(this.destroyed);
     const current = this.session;
     if (!current) throw new Error("Player is not loaded");
+    this.resetPlaybackRecovery();
     const revision = this.operation.next();
     const signal = this.operation.signal;
     const targetMs = Math.max(0, Math.round(positionMs));
@@ -209,7 +215,7 @@ import type {
       );
       if (quality) emitQuality(this.emitter, session);
     } catch (error) {
-      if (!this.destroyed && this.session === current) {
+      if (!this.destroyed && this.operation.isCurrent(revision) && this.session === current) {
         this.deps.loop.start();
         this.playerState.set(this.video.paused ? "ready" : "playing");
       }
@@ -226,8 +232,37 @@ import type {
     quality?: TypeTypeMseQuality,
     audioOnly = this.audioOnly,
     finalizePausedSeek = false,
+    allowWindowRecovery = true,
   ): Promise<LoadedSession> {
-    const session = await loadPlayerSession({
+    return this.enqueueSessionTransition(() =>
+      this.activateSession(
+        response,
+        startTimeMs,
+        revision,
+        signal,
+        quality,
+        audioOnly,
+        finalizePausedSeek,
+        allowWindowRecovery,
+      ),
+    );
+  }
+
+  /** Quiesces old media work before attaching and starting a replacement session. */
+  private async activateSession(
+    response: LoadedSession["response"],
+    startTimeMs: number,
+    revision: number,
+    signal: AbortSignal,
+    quality?: TypeTypeMseQuality,
+    audioOnly = this.audioOnly,
+    finalizePausedSeek = false,
+    allowWindowRecovery = true,
+  ): Promise<LoadedSession> {
+    await this.deps.loop.quiesce();
+    this.operation.ensureCurrent(this.destroyed, revision);
+    const load = allowWindowRecovery ? loadPlayerSession : loadPlayerSessionOnce;
+    const session = await load({
       deps: this.deps,
       config: { ...this.config, audioOnly },
       video: this.video,
@@ -236,6 +271,7 @@ import type {
       quality,
       startTimeMs,
       signal,
+      recovery: this.playbackRecovery,
     });
     this.operation.ensureCurrent(this.destroyed, revision);
     const startMs = decodeStartMs(session.manifest, startTimeMs);
@@ -244,6 +280,7 @@ import type {
     }
     this.session = session;
     await this.deps.loop.fillOnce();
+    this.operation.ensureCurrent(this.destroyed, revision);
     if (startTimeMs > startMs) {
       if (this.playbackIntent.shouldResume) {
         await runDecodePreroll(this.video, startTimeMs, true, signal);
@@ -268,9 +305,103 @@ import type {
     } else {
       this.pendingPrerollTargetMs = null;
     }
+    this.operation.ensureCurrent(this.destroyed, revision);
+    this.playbackRecovery.complete(currentTimeMs(this.video));
     this.deps.loop.start();
     emitManifest(this.emitter, session.response, session);
     this.playerState.set(this.video.paused ? "ready" : "playing");
     return session;
   }
+
+  /** Recovers terminal playback windows within the bounded fresh-session budget. */
+  private handlePlaybackLoopError(error: Error, context: PlaybackLoopFailureContext): void {
+    if (this.destroyed || context.signal.aborted) return;
+    const current = this.session;
+    const sessionId = context.sessionId;
+    if (!current || sessionId === null || sessionId !== current.response.sessionId) return;
+    if (!(error instanceof PlaybackWindowRecoveryError)) {
+      this.reportPlaybackFailure(error);
+      return;
+    }
+    const positionMs = currentTimeMs(this.video);
+    const decision = this.playbackRecovery.begin(sessionId);
+    if (decision === "ignore") return;
+    if (decision === "exhausted") {
+      this.reportPlaybackFailure(error);
+      return;
+    }
+    const revision = this.operation.next();
+    const signal = this.operation.signal;
+    this.deps.loop.stop();
+    this.playbackIntent.capture(this.video.paused, this.playerState.value === "seeking");
+    this.playerState.set("buffering");
+    void recoverPlaybackSession({
+      recovery: this.playbackRecovery,
+      current,
+      error,
+      videoId: this.config.videoId,
+      startTimeMs: positionMs,
+      signal,
+      create: (request, recoverySignal) => this.deps.playback.create(request, recoverySignal),
+      ensureCurrent: () => this.operation.ensureCurrent(this.destroyed, revision),
+      switchSession: (response, quality) =>
+        this.switchSession(
+          response,
+          positionMs,
+          revision,
+          signal,
+          quality,
+          current.audioOnly,
+          false,
+          false,
+        ),
+    })
+      .then((session) => {
+        if (this.operation.isCurrent(revision) && session.videoItag !== current.videoItag) {
+          emitQuality(this.emitter, session);
+        }
+      })
+      .catch((recoveryError: unknown) => {
+        if (isAbortError(recoveryError)) return;
+        if (!this.destroyed && this.operation.isCurrent(revision)) {
+          this.reportPlaybackFailure(asError(recoveryError));
+        }
+      })
+      .finally(() => {
+        this.playbackRecovery.finish(sessionId);
+      });
+  }
+
+  /** Starts a new recovery episode for an explicit user operation. */
+  private resetPlaybackRecovery(): void {
+    this.playbackRecovery.reset();
+  }
+
+  /** Publishes one final playback failure and aborts pending media work. */
+  private reportPlaybackFailure(error: Error): void {
+    if (this.destroyed) return;
+    this.playbackRecovery.reportOnce(error, (failure) => {
+      this.operation.abort();
+      this.deps.loop.stop();
+      this.playerState.fail(failure);
+    });
+  }
+
+  /** Serializes MediaSource ownership transitions. */
+  private enqueueSessionTransition<T>(work: () => Promise<T>): Promise<T> {
+    const result = this.sessionTransition.then(work, work);
+    this.sessionTransition = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
+function asError(error: unknown): Error {
+  return error instanceof Error ? error : new Error("SABR playback recovery failed");
 }
