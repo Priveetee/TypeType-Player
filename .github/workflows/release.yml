@@ -74,7 +74,10 @@ jobs:
           fi
       - name: Pack release
         id: pack
-        run: echo "filename=$(npm pack --json --ignore-scripts | jq --raw-output 'if type == \"array\" then .[0].filename else to_entries[0].value.filename end')" >> "$GITHUB_OUTPUT"
+        run: |
+          filename=$(npm pack --json --ignore-scripts | jq --raw-output 'if type == "array" then .[0].filename else to_entries[0].value.filename end')
+          test -n "$filename"
+          echo "filename=$filename" >> "$GITHUB_OUTPUT"
       - uses: actions/attest@a1948c3f048ba23858d222213b7c278aabede763
         with:
           subject-path: ${{ steps.pack.outputs.filename }}
