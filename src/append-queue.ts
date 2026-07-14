@@ -1,4 +1,5 @@
 type QueueItem = {
+  kind: "append" | "remove";
   action: () => void;
   resolve: () => void;
   reject: (error: Error) => void;
@@ -17,7 +18,12 @@ export class AppendQueue {
   append(data: ArrayBuffer): Promise<void> {
     if (this.disposed) return Promise.reject(new Error("Append queue is disposed"));
     return new Promise((resolve, reject) => {
-      this.queue.push({ action: () => this.sourceBuffer.appendBuffer(data), resolve, reject });
+      this.queue.push({
+        kind: "append",
+        action: () => this.sourceBuffer.appendBuffer(data),
+        resolve,
+        reject,
+      });
       this.drain();
     });
   }
@@ -27,6 +33,7 @@ export class AppendQueue {
     if (endSeconds <= startSeconds) return Promise.resolve();
     return new Promise((resolve, reject) => {
       this.queue.push({
+        kind: "remove",
         action: () => this.sourceBuffer.remove(startSeconds, endSeconds),
         resolve,
         reject,
@@ -51,19 +58,21 @@ export class AppendQueue {
 
   clear(): void {
     const error = new DOMException("Operation aborted", "AbortError");
-    this.current?.reject(error);
+    const current = this.current;
+    current?.reject(error);
     for (const item of this.queue.splice(0)) item.reject(error);
     this.current = null;
-    if (this.sourceBuffer.updating) this.sourceBuffer.abort();
+    if (this.sourceBuffer.updating && current?.kind === "append") this.sourceBuffer.abort();
   }
 
   destroy(): void {
     this.disposed = true;
     const error = new DOMException("Operation aborted", "AbortError");
-    this.current?.reject(error);
+    const current = this.current;
+    current?.reject(error);
     for (const item of this.queue.splice(0)) item.reject(error);
     this.current = null;
-    if (this.sourceBuffer.updating) this.sourceBuffer.abort();
+    if (this.sourceBuffer.updating && current?.kind === "append") this.sourceBuffer.abort();
     this.sourceBuffer.removeEventListener("updateend", this.handleUpdateEnd);
     this.sourceBuffer.removeEventListener("error", this.handleError);
   }
