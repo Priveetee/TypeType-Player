@@ -46,7 +46,7 @@ export type TypeTypeMseEvent =
   | { type: "segment"; kind: TrackKind; url: string; startMs: number; durationMs: number }
   | { type: "buffer"; bufferedEndMs: number; currentTimeMs: number }
   | { type: "seek"; positionMs: number }
-  | { type: "error"; error: Error };
+  | { type: "error"; error: Error; recoveryPositionMs: number };
 
 /** Discriminant accepted by {@link TypeTypeMsePlayer.on}. */
 export type TypeTypeMseEventType = TypeTypeMseEvent["type"];

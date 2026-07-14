@@ -32,6 +32,7 @@ import type {
   private loadTask: Promise<void> | null = null;
   private sessionTransition: Promise<void> = Promise.resolve();
   private audioOnly: boolean;
+  private recoveryPositionMs: number;
   private destroyed = false;
 
   /** Creates a player without starting network or media operations. */ constructor(
@@ -41,6 +42,7 @@ import type {
     this.video.crossOrigin = "anonymous";
     this.video.playsInline = true;
     this.audioOnly = config.audioOnly === true;
+    this.recoveryPositionMs = Math.max(0, Math.round(config.startTimeMs ?? 0));
     this.deps = createPlayerDeps({
       video,
       config,
@@ -49,7 +51,10 @@ import type {
       signal: () => this.operation.signal,
       state: (state) => this.playerState.set(state),
       error: (error) => this.reportPlaybackFailure(error),
-      progress: (positionMs) => this.playbackRecovery.observeProgress(positionMs),
+      progress: (positionMs) => {
+        this.rememberRecoveryPosition(positionMs);
+        this.playbackRecovery.observeProgress(positionMs);
+      },
       loopError: (error, context) => this.handlePlaybackLoopError(error, context),
     });
     this.deps.mediaEvents.start();
@@ -63,7 +68,10 @@ import type {
 
   /** Creates the initial playback session and fills the first media window. */ load(): Promise<void> {
     ensurePlayerAlive(this.destroyed);
-    const task = this.loadInitialSession();
+    const task = this.loadInitialSession().catch((error: unknown) => {
+      if (!isAbortError(error)) this.reportPlaybackFailure(asError(error));
+      throw error;
+    });
     this.loadTask = task;
     const clearTask = () => {
       if (this.loadTask === task) this.loadTask = null;
@@ -79,6 +87,7 @@ import type {
     const signal = this.operation.signal;
     this.playerState.set("loading");
     const startTimeMs = Math.max(0, Math.round(this.config.startTimeMs ?? 0));
+    this.recoveryPositionMs = startTimeMs;
     const response = await this.deps.playback.create(
       {
         videoId: this.config.videoId,
@@ -116,6 +125,7 @@ import type {
   async seek(positionMs: number): Promise<void> {
     this.playbackIntent.capture(this.video.paused, this.playerState.value === "seeking");
     const targetMs = Math.max(0, Math.round(positionMs));
+    this.recoveryPositionMs = targetMs;
     return this.seekController.seek(
       targetMs,
       `seek:${targetMs}`,
@@ -323,7 +333,8 @@ import type {
       this.reportPlaybackFailure(error);
       return;
     }
-    const positionMs = currentTimeMs(this.video);
+    this.rememberRecoveryPosition(currentTimeMs(this.video));
+    const positionMs = this.recoveryPositionMs;
     const decision = this.playbackRecovery.begin(sessionId);
     if (decision === "ignore") return;
     if (decision === "exhausted") {
@@ -380,11 +391,19 @@ import type {
   /** Publishes one final playback failure and aborts pending media work. */
   private reportPlaybackFailure(error: Error): void {
     if (this.destroyed) return;
+    this.rememberRecoveryPosition(currentTimeMs(this.video));
     this.playbackRecovery.reportOnce(error, (failure) => {
       this.operation.abort();
       this.deps.loop.stop();
-      this.playerState.fail(failure);
+      this.playerState.fail(failure, this.recoveryPositionMs);
     });
+  }
+
+  /** Keeps the last usable media position across source teardown. */
+  private rememberRecoveryPosition(positionMs: number): void {
+    if (Number.isFinite(positionMs) && positionMs > 0) {
+      this.recoveryPositionMs = Math.round(positionMs);
+    }
   }
 
   /** Serializes MediaSource ownership transitions. */

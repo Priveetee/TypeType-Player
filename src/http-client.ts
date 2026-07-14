@@ -8,6 +8,10 @@ class TypeTypeHttpError extends Error {
   }
 }
 
+const MAX_TRANSIENT_RETRIES = 24;
+const MAX_RETRY_DELAY_MS = 3_000;
+const TRANSIENT_STATUSES = new Set([502, 503, 504]);
+
 export type HttpClientOptions = {
   endpoint: string;
   headers?: HeadersInit;
@@ -32,7 +36,7 @@ export class HttpClient {
   }
 
   response(url: string, init?: RequestInit): Promise<Response> {
-    return this.fetchRaw(url, init);
+    return this.fetchWithTransientRetry(url, init);
   }
 
   absolute(path: string): string {
@@ -44,9 +48,24 @@ export class HttpClient {
   }
 
   private async fetchAbsolute(url: string, init?: RequestInit): Promise<Response> {
-    const response = await this.fetchRaw(url, init);
+    const response = await this.fetchWithTransientRetry(url, init);
     if (!response.ok) throw new TypeTypeHttpError(response.statusText, response.status);
     return response;
+  }
+
+  private async fetchWithTransientRetry(url: string, init?: RequestInit): Promise<Response> {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        const response = await this.fetchRaw(url, init);
+        if (!TRANSIENT_STATUSES.has(response.status) || attempt >= MAX_TRANSIENT_RETRIES)
+          return response;
+        await retryDelay(response, attempt, init?.signal);
+      } catch (error) {
+        if (isAbortError(error)) throw error;
+        if (attempt >= MAX_TRANSIENT_RETRIES) throw error;
+        await retryDelay(null, attempt, init?.signal);
+      }
+    }
   }
 
   private async fetchRaw(url: string, init?: RequestInit): Promise<Response> {
@@ -62,4 +81,42 @@ export class HttpClient {
       ? this.options.endpoint
       : `${this.options.endpoint}/`;
   }
+}
+
+function retryDelay(
+  response: Response | null,
+  attempt: number,
+  signal?: AbortSignal | null,
+): Promise<void> {
+  const headerDelay = response ? retryAfterMs(response.headers.get("retry-after")) : null;
+  const delayMs = headerDelay ?? Math.min(MAX_RETRY_DELAY_MS, 500 * 2 ** attempt);
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason ?? new DOMException("Operation aborted", "AbortError"));
+      return;
+    }
+    const timer = setTimeout(finish, delayMs);
+    signal?.addEventListener("abort", abort, { once: true });
+    function finish(): void {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }
+    function abort(): void {
+      clearTimeout(timer);
+      reject(signal?.reason ?? new DOMException("Operation aborted", "AbortError"));
+    }
+  });
+}
+
+function retryAfterMs(value: string | null): number | null {
+  if (value === null) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.min(MAX_RETRY_DELAY_MS, seconds * 1000);
+  const dateMs = Date.parse(value);
+  if (!Number.isFinite(dateMs)) return null;
+  return Math.min(MAX_RETRY_DELAY_MS, Math.max(0, dateMs - Date.now()));
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
 }

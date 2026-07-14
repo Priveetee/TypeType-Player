@@ -22,11 +22,13 @@ type RecoveryHarness = {
   operation: PlayerOperation;
   playbackRecovery: PlaybackRecovery;
   playbackIntent: PlaybackIntent;
+  recoveryPositionMs: number;
+  loadTask: Promise<void> | null;
   emitter: { emit: (event: { type: string; videoItag?: number }) => void };
   playerState: {
     value: TypeTypeMseState;
     set: (state: TypeTypeMseState) => void;
-    fail: (error: Error) => void;
+    fail: (error: Error, recoveryPositionMs: number) => void;
   };
   deps: {
     loop: { stop: () => void };
@@ -39,6 +41,8 @@ type RecoveryHarness = {
   switchSession: (...args: unknown[]) => Promise<LoadedSession>;
   handlePlaybackLoopError: (error: Error, context: PlaybackLoopFailureContext) => void;
   reportPlaybackFailure: (error: Error) => void;
+  loadInitialSession: () => Promise<void>;
+  load: () => Promise<void>;
   enqueueSessionTransition: <T>(work: () => Promise<T>) => Promise<T>;
   sessionTransition: Promise<void>;
 };
@@ -74,13 +78,16 @@ function harness(
   player: RecoveryHarness;
   requests: CreatePlaybackRequest[];
   failures: Error[];
+  failurePositions: number[];
   qualities: number[];
 } {
   const player = Object.create(TypeTypeMsePlayer.prototype) as RecoveryHarness;
   const requests: CreatePlaybackRequest[] = [];
   const failures: Error[] = [];
+  const failurePositions: number[] = [];
   const qualities: number[] = [];
   player.destroyed = false;
+  player.loadTask = null;
   player.sessionTransition = Promise.resolve();
   player.session = loaded("source");
   player.operation = new PlayerOperation();
@@ -89,7 +96,10 @@ function harness(
   player.playerState = {
     value: "playing",
     set: (state) => (player.playerState.value = state),
-    fail: (error) => failures.push(error),
+    fail: (error, positionMs) => {
+      failures.push(error);
+      failurePositions.push(positionMs);
+    },
   };
   player.deps = {
     loop: { stop: () => undefined },
@@ -108,6 +118,7 @@ function harness(
     },
   };
   player.video = { paused, currentTime: 379.441 };
+  player.recoveryPositionMs = 379_441;
   player.config = {
     endpoint: "https://beta.typetype.video/api",
     videoId: "nt1TGErpc0Q",
@@ -122,7 +133,7 @@ function harness(
     player.session = next;
     return next;
   };
-  return { player, requests, failures, qualities };
+  return { player, requests, failures, failurePositions, qualities };
 }
 
 function response(sessionId: string): PlaybackResponse {
@@ -249,7 +260,7 @@ test("serializes media source session transitions", async () => {
 });
 
 test("a generic failure aborts pending recovery and is reported once", async () => {
-  const { player, failures } = harness(
+  const { player, failures, failurePositions } = harness(
     async (_request, signal) =>
       new Promise<PlaybackResponse>((_resolve, reject) => {
         signal?.addEventListener(
@@ -264,6 +275,7 @@ test("a generic failure aborts pending recovery and is reported once", async () 
     signal: player.operation.signal,
   });
   const generic = new Error("media append failed");
+  player.video.currentTime = 0;
 
   player.handlePlaybackLoopError(generic, {
     sessionId: "source",
@@ -273,7 +285,20 @@ test("a generic failure aborts pending recovery and is reported once", async () 
   await Bun.sleep(0);
 
   expect(failures).toEqual([generic]);
+  expect(failurePositions).toEqual([379_441]);
   expect(player.operation.signal.aborted).toBe(true);
+});
+
+test("an initial load failure reports its configured recovery position", async () => {
+  const { player, failures, failurePositions } = harness(async () => response("unused"));
+  const failure = new Error("gateway unavailable");
+  player.video.currentTime = 0;
+  player.loadInitialSession = () => Promise.reject(failure);
+
+  await expect(player.load()).rejects.toBe(failure);
+
+  expect(failures).toEqual([failure]);
+  expect(failurePositions).toEqual([379_441]);
 });
 
 test("an old generic failure cannot replace an active recovery", async () => {

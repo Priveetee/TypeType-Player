@@ -12,10 +12,10 @@ export class PlayerState {
     this.emitter.emit({ type: "state", state });
   }
 
-  fail(error: Error): void {
+  fail(error: Error, recoveryPositionMs: number): void {
     if (error.name === "AbortError") return;
     this.set("error");
-    this.emitter.emit({ type: "error", error });
+    this.emitter.emit({ type: "error", error, recoveryPositionMs });
   }
 
   destroy(): void {
