@@ -28,10 +28,17 @@ export async function runDecodePreroll(
   signal: AbortSignal,
   requireFrame = false,
 ): Promise<void> {
+  ensureNotAborted(signal);
   const targetReached = video.currentTime * 1000 >= targetMs - TARGET_TOLERANCE_MS;
   if (targetReached && (!requireFrame || video.readyState >= HAVE_CURRENT_DATA)) {
-    const exact = Math.abs(video.currentTime * 1000 - targetMs) <= SNAP_TOLERANCE_MS;
-    if (!exact) await snapToTarget(video, targetMs, signal);
+    const distanceMs = Math.abs(video.currentTime * 1000 - targetMs);
+    const exact = distanceMs <= SNAP_TOLERANCE_MS;
+    const resumeWithinTolerance = resumePlayback && distanceMs <= TARGET_TOLERANCE_MS;
+    if (!exact && !resumeWithinTolerance) await snapToTarget(video, targetMs, signal);
+    if (resumePlayback && video.paused) {
+      await video.play();
+      ensureNotAborted(signal);
+    }
     return;
   }
   const muted = video.muted;
@@ -44,16 +51,21 @@ export async function runDecodePreroll(
   try {
     await video.play();
     await waitForTarget(video, targetMs, signal);
-    video.pause();
-    pausedForSnap = true;
-    await snapToTarget(video, targetMs, signal);
+    if (!resumePlayback) {
+      video.pause();
+      pausedForSnap = true;
+      await snapToTarget(video, targetMs, signal);
+    }
   } finally {
     video.playbackRate = playbackRate;
     video.muted = muted;
     video.autoplay = autoplay;
     if (!resumePlayback) {
       if (!pausedForSnap) video.pause();
-    } else if (!signal.aborted) await video.play();
+    } else if (!signal.aborted) {
+      await video.play();
+      ensureNotAborted(signal);
+    }
   }
 }
 
@@ -62,6 +74,9 @@ function snapToTarget(
   targetMs: number,
   signal: AbortSignal,
 ): Promise<void> {
+  ensureNotAborted(signal);
+  const exact = Math.abs(video.currentTime * 1000 - targetMs) <= SNAP_TOLERANCE_MS;
+  if (exact && video.readyState >= HAVE_CURRENT_DATA) return Promise.resolve();
   video.currentTime = targetMs / 1000;
   return new Promise((resolve, reject) => {
     const startedAt = performance.now();
@@ -76,6 +91,10 @@ function snapToTarget(
     };
     poll();
   });
+}
+
+function ensureNotAborted(signal: AbortSignal): void {
+  if (signal.aborted) throw new DOMException("Operation aborted", "AbortError");
 }
 
 function waitForTarget(

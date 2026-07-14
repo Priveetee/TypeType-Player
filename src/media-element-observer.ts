@@ -4,6 +4,7 @@ type MediaElementObserverArgs = {
   video: HTMLVideoElement;
   state: (state: TypeTypeMseState) => void;
   error: (error: Error) => void;
+  progress: (positionMs: number) => void;
 };
 
 export class MediaElementObserver {
@@ -15,6 +16,7 @@ export class MediaElementObserver {
     this.args.video.addEventListener("stalled", this.buffering);
     this.args.video.addEventListener("ended", this.ended);
     this.args.video.addEventListener("error", this.error);
+    this.args.video.addEventListener("timeupdate", this.progress);
   }
 
   stop(): void {
@@ -23,6 +25,7 @@ export class MediaElementObserver {
     this.args.video.removeEventListener("stalled", this.buffering);
     this.args.video.removeEventListener("ended", this.ended);
     this.args.video.removeEventListener("error", this.error);
+    this.args.video.removeEventListener("timeupdate", this.progress);
   }
 
   private readonly playing = (): void => this.args.state("playing");
@@ -34,5 +37,9 @@ export class MediaElementObserver {
   private readonly error = (): void => {
     const code = this.args.video.error?.code ?? 0;
     this.args.error(new Error(`Media element failed with code ${code}`));
+  };
+
+  private readonly progress = (): void => {
+    this.args.progress(Math.round(this.args.video.currentTime * 1000));
   };
 }

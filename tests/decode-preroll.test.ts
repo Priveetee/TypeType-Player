@@ -87,3 +87,177 @@ test("snaps an overshot decoded frame to the exact target", async () => {
   expect(video.currentTime).toBe(438.698);
   expect(plays).toBe(0);
 });
+
+test("does not seek again after preroll decodes the exact target frame", async () => {
+  let currentTime = 24.791;
+  let currentTimeWrites = 0;
+  let plays = 0;
+  const video = {
+    autoplay: false,
+    error: null,
+    muted: false,
+    playbackRate: 1,
+    readyState: 4,
+    get currentTime() {
+      return currentTime;
+    },
+    set currentTime(value: number) {
+      currentTime = value;
+      currentTimeWrites += 1;
+    },
+    pause: () => undefined,
+    play: async () => {
+      plays += 1;
+      currentTime = 30.298;
+    },
+  } as unknown as HTMLVideoElement;
+
+  await runDecodePreroll(video, 30_298, true, new AbortController().signal);
+
+  expect(plays).toBe(2);
+  expect(currentTimeWrites).toBe(0);
+  expect(video.currentTime).toBe(30.298);
+});
+
+test("keeps a resumed position already within target tolerance", async () => {
+  let currentTime = 30.25;
+  let currentTimeWrites = 0;
+  let plays = 0;
+  const video = {
+    autoplay: false,
+    error: null,
+    muted: false,
+    paused: true,
+    playbackRate: 1,
+    readyState: 4,
+    get currentTime() {
+      return currentTime;
+    },
+    set currentTime(value: number) {
+      currentTime = value;
+      currentTimeWrites += 1;
+    },
+    pause: () => undefined,
+    play: async () => {
+      plays += 1;
+    },
+  } as unknown as HTMLVideoElement;
+
+  await runDecodePreroll(video, 30_298, true, new AbortController().signal);
+
+  expect(currentTimeWrites).toBe(0);
+  expect(plays).toBe(1);
+});
+
+test("does not seek or pause a resumed preroll within target tolerance", async () => {
+  let currentTime = 24.791;
+  let currentTimeWrites = 0;
+  let plays = 0;
+  let pauses = 0;
+  const video = {
+    autoplay: false,
+    error: null,
+    muted: false,
+    playbackRate: 1,
+    readyState: 4,
+    get currentTime() {
+      return currentTime;
+    },
+    set currentTime(value: number) {
+      currentTime = value;
+      currentTimeWrites += 1;
+    },
+    pause: () => {
+      pauses += 1;
+    },
+    play: async () => {
+      plays += 1;
+      if (plays === 1) currentTime = 30.23;
+    },
+  } as unknown as HTMLVideoElement;
+
+  await runDecodePreroll(video, 30_298, true, new AbortController().signal);
+
+  expect(currentTimeWrites).toBe(0);
+  expect(pauses).toBe(0);
+  expect(plays).toBe(2);
+});
+
+test("keeps the exact snap for a paused preroll", async () => {
+  let currentTime = 24.791;
+  let currentTimeWrites = 0;
+  let pauses = 0;
+  const video = {
+    autoplay: false,
+    error: null,
+    muted: false,
+    playbackRate: 1,
+    readyState: 4,
+    get currentTime() {
+      return currentTime;
+    },
+    set currentTime(value: number) {
+      currentTime = value;
+      currentTimeWrites += 1;
+    },
+    pause: () => {
+      pauses += 1;
+    },
+    play: async () => {
+      currentTime = 30.23;
+    },
+  } as unknown as HTMLVideoElement;
+
+  await runDecodePreroll(video, 30_298, false, new AbortController().signal);
+
+  expect(currentTimeWrites).toBe(1);
+  expect(pauses).toBe(1);
+  expect(video.currentTime).toBe(30.298);
+});
+
+test("rejects an abort that happens at the exact preroll target", async () => {
+  let currentTime = 24.791;
+  const controller = new AbortController();
+  const video = {
+    autoplay: false,
+    error: null,
+    muted: false,
+    playbackRate: 1,
+    readyState: 4,
+    get currentTime() {
+      return currentTime;
+    },
+    set currentTime(value: number) {
+      currentTime = value;
+    },
+    pause: () => controller.abort(),
+    play: async () => {
+      currentTime = 30.298;
+    },
+  } as unknown as HTMLVideoElement;
+
+  await expect(runDecodePreroll(video, 30_298, false, controller.signal)).rejects.toHaveProperty(
+    "name",
+    "AbortError",
+  );
+});
+
+test("rejects an abort during a resumed target play", async () => {
+  const controller = new AbortController();
+  const video = {
+    autoplay: false,
+    currentTime: 30.25,
+    error: null,
+    muted: false,
+    paused: true,
+    playbackRate: 1,
+    readyState: 4,
+    pause: () => undefined,
+    play: async () => controller.abort(),
+  } as unknown as HTMLVideoElement;
+
+  await expect(runDecodePreroll(video, 30_298, true, controller.signal)).rejects.toHaveProperty(
+    "name",
+    "AbortError",
+  );
+});

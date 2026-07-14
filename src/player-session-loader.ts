@@ -1,5 +1,6 @@
 import { decodeStartMs } from "./decode-preroll";
 import type { PlayerDeps } from "./player-deps";
+import type { PlaybackRecovery } from "./player-recovery";
 import {
   type LoadedSession,
   loadPlaybackSession,
@@ -16,6 +17,7 @@ type Args = {
   quality: TypeTypeMseQuality | undefined;
   startTimeMs: number;
   signal: AbortSignal;
+  recovery: PlaybackRecovery;
 };
 
 type PlayerSessionDeps = {
@@ -37,11 +39,13 @@ export async function loadPlayerSession(args: Args): Promise<LoadedSession> {
     return await loadSelectedSession(args, args.response, selection);
   } catch (error) {
     if (!(error instanceof PlaybackWindowRecoveryError)) throw error;
-    if (error.recoveryAction === "retry_fresh_session") {
-      return recoverWithFreshSession(args, selection);
-    }
-    return recoverWithFreshSessions(args, selection, error.retryVideoItags);
+    return recoverInitialSession(args, selection, error);
   }
+}
+
+export function loadPlayerSessionOnce(args: Args): Promise<LoadedSession> {
+  const selection = resolveSelection(args);
+  return loadSelectedSession(args, args.response, selection);
 }
 
 function resolveSelection(args: Args): TrackSelection {
@@ -79,17 +83,23 @@ async function loadSelectedSession(
     args.startTimeMs + args.deps.policy.bufferGoalMs,
     args.signal,
   );
+  if (args.signal.aborted) throw new DOMException("Operation aborted", "AbortError");
   return session;
 }
 
-async function recoverWithFreshSessions(
+async function recoverInitialSession(
   args: Args,
   selection: TrackSelection,
-  retryVideoItags: number[],
+  initialError: PlaybackWindowRecoveryError,
 ): Promise<LoadedSession> {
-  let lastError: unknown = null;
-  for (const videoItag of retryVideoItags) {
-    if (videoItag === selection.videoItag) continue;
+  let videoItag = selection.videoItag;
+  let lastError: unknown = initialError;
+  let recoveryError: PlaybackWindowRecoveryError | null = initialError;
+  while (true) {
+    if (recoveryError?.recoveryAction === "retry_fresh_session_lower_video_itag") {
+      videoItag = args.recovery.nextLowerVideoItag(recoveryError, videoItag);
+    }
+    if (!args.recovery.takeAttempt(videoItag)) throw lastError;
     try {
       const response = await args.deps.playback.create(
         {
@@ -102,32 +112,14 @@ async function recoverWithFreshSessions(
         },
         args.signal,
       );
-      return await loadSelectedSession(args, response, { ...selection, videoItag });
+      const session = await loadSelectedSession(args, response, { ...selection, videoItag });
+      return session;
     } catch (error) {
       if (isAbortError(error)) throw error;
       lastError = error;
+      if (error instanceof PlaybackWindowRecoveryError) recoveryError = error;
     }
   }
-  if (lastError instanceof Error) throw lastError;
-  throw new Error("Playback window recovery failed");
-}
-
-async function recoverWithFreshSession(
-  args: Args,
-  selection: TrackSelection,
-): Promise<LoadedSession> {
-  const response = await args.deps.playback.create(
-    {
-      videoId: args.config.videoId,
-      videoItag: selection.videoItag,
-      audioItag: selection.audioItag,
-      audioTrackId: selection.audioTrackId,
-      startTimeMs: args.startTimeMs,
-      audioOnly: args.config.audioOnly === true,
-    },
-    args.signal,
-  );
-  return loadSelectedSession(args, response, selection);
 }
 
 function isAbortError(error: unknown): boolean {

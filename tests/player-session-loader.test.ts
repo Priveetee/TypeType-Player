@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import type { PlaybackManifest } from "../src/manifest";
 import type { PlaybackResponse } from "../src/playback-client";
 import type { PlaybackWindow, PlaybackWindowRequest } from "../src/playback-window";
+import { PlaybackRecovery } from "../src/player-recovery";
 import { loadPlayerSession } from "../src/player-session-loader";
 
 Object.defineProperty(globalThis, "MediaSource", {
@@ -147,6 +148,7 @@ test("recovers terminal seek windows with a fresh lower video itag session", asy
     quality: undefined,
     startTimeMs: 60_000,
     signal: new AbortController().signal,
+    recovery: new PlaybackRecovery(),
   });
 
   expect(session.response.sessionId).toBe("fresh-136");
@@ -212,6 +214,7 @@ test("recovers invalid sabr context with a fresh session using the same formats"
     quality: undefined,
     startTimeMs: 399_383,
     signal: new AbortController().signal,
+    recovery: new PlaybackRecovery(),
   });
 
   expect(created).toEqual([137]);

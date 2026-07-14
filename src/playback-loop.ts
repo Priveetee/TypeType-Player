@@ -17,98 +17,157 @@ type PlaybackLoopArgs = {
   session: () => LoadedSession | null;
   signal: () => AbortSignal;
   bufferedEndMs: () => number;
-  error: (error: Error) => void;
+  error: (error: Error, context: PlaybackLoopFailureContext) => void;
+};
+
+export type PlaybackLoopFailureContext = {
+  sessionId: string | null;
+  signal: AbortSignal;
 };
 
 export class PlaybackLoop {
   private fillTimer: ReturnType<typeof setInterval> | null = null;
   private manifestTimer: ReturnType<typeof setInterval> | null = null;
-  private filling = false;
-  private refreshing = false;
+  private fillTask: Promise<void> | null = null;
+  private fillTaskRevision: number | null = null;
+  private refreshTask: Promise<void> | null = null;
+  private revision = 0;
 
   constructor(private readonly args: PlaybackLoopArgs) {}
 
   start(): void {
     this.stop();
-    this.fillTimer = setInterval(
-      () => void this.fillOnce().catch((error) => this.fail(error)),
-      this.args.policy.pollIntervalMs,
-    );
+    const revision = this.revision;
+    this.fillTimer = setInterval(() => {
+      const context = this.failureContext();
+      void this.fillOnce(revision).catch((error) => this.fail(error, context, revision));
+    }, this.args.policy.pollIntervalMs);
     this.manifestTimer = setInterval(
-      () => this.requestManifestRefreshIfNeeded(),
+      () => this.requestManifestRefreshIfNeeded(revision),
       this.args.policy.manifestRefreshMs,
     );
   }
 
   stop(): void {
+    this.revision += 1;
     if (this.fillTimer) clearInterval(this.fillTimer);
     if (this.manifestTimer) clearInterval(this.manifestTimer);
     this.fillTimer = null;
     this.manifestTimer = null;
   }
 
-  async fillOnce(): Promise<void> {
-    const session = this.args.session();
-    if (!session || this.filling) return;
-    this.filling = true;
-    try {
-      const currentMs = currentTimeMs(this.args.video);
-      const bufferGoalMs = this.args.policy.bufferGoalMs;
-      const goalMs = currentMs + bufferGoalMs;
-      await this.args.scheduler.fill(session.manifest, currentMs, goalMs, this.args.signal());
-      await this.args.media.trim(currentMs, this.args.policy.backBufferMs);
-      const bufferedEndMs = this.args.bufferedEndMs();
-      this.args.emitter.emit({
-        type: "buffer",
-        currentTimeMs: currentMs,
-        bufferedEndMs,
-      });
-      if (session.manifest.endOfStream && this.args.media.endOfStream()) {
-        this.stop();
-        return;
-      }
-      if (bufferedEndMs < currentMs + refreshThresholdMs(bufferGoalMs)) {
-        this.requestManifestRefresh();
-      }
-    } finally {
-      this.filling = false;
-    }
-  }
-
-  private async refreshManifest(): Promise<void> {
-    const session = this.args.session();
-    if (!session || this.refreshing) return;
-    this.refreshing = true;
-    try {
-      await refreshPlaybackWindow(
-        this.args.playback,
-        this.args.media,
-        session,
-        this.args.policy,
-        currentTimeMs(this.args.video),
-        this.args.signal(),
+  async quiesce(): Promise<void> {
+    this.stop();
+    while (this.fillTask || this.refreshTask) {
+      const tasks = [this.fillTask, this.refreshTask].filter(
+        (task): task is Promise<void> => task !== null,
       );
-    } finally {
-      this.refreshing = false;
+      await Promise.allSettled(tasks);
     }
   }
 
-  private requestManifestRefresh(): void {
-    void this.refreshManifest().catch((error: unknown) => {
-      if (error instanceof DOMException && error.name === "AbortError") return;
-      this.fail(error);
-    });
+  fillOnce(revision = this.revision): Promise<void> {
+    if (this.fillTask) {
+      return this.fillTaskRevision === revision ? this.fillTask : Promise.resolve();
+    }
+    const session = this.args.session();
+    if (!session) return Promise.resolve();
+    const signal = this.args.signal();
+    const task = this.performFill(session, signal, revision);
+    this.fillTask = task;
+    this.fillTaskRevision = revision;
+    const clear = () => {
+      if (this.fillTask === task) {
+        this.fillTask = null;
+        this.fillTaskRevision = null;
+      }
+    };
+    void task.then(clear, clear);
+    return task;
   }
 
-  private requestManifestRefreshIfNeeded(): void {
+  private async performFill(
+    session: LoadedSession,
+    signal: AbortSignal,
+    revision: number,
+  ): Promise<void> {
+    const currentMs = currentTimeMs(this.args.video);
+    const bufferGoalMs = this.args.policy.bufferGoalMs;
+    const goalMs = currentMs + bufferGoalMs;
+    await this.args.scheduler.fill(session.manifest, currentMs, goalMs, signal);
+    this.ensureCurrent(revision, signal);
+    await this.args.media.trim(currentMs, this.args.policy.backBufferMs);
+    this.ensureCurrent(revision, signal);
+    const bufferedEndMs = this.args.bufferedEndMs();
+    this.args.emitter.emit({
+      type: "buffer",
+      currentTimeMs: currentMs,
+      bufferedEndMs,
+    });
+    if (session.manifest.endOfStream && this.args.media.endOfStream()) {
+      this.stop();
+      return;
+    }
+    if (bufferedEndMs < currentMs + refreshThresholdMs(bufferGoalMs)) {
+      this.requestManifestRefresh(revision);
+    }
+  }
+
+  private async refreshManifest(session: LoadedSession, signal: AbortSignal): Promise<void> {
+    const revision = this.revision;
+    await refreshPlaybackWindow(
+      this.args.playback,
+      this.args.media,
+      session,
+      this.args.policy,
+      currentTimeMs(this.args.video),
+      signal,
+    );
+    this.ensureCurrent(revision, signal);
+  }
+
+  private requestManifestRefresh(revision: number): void {
+    const session = this.args.session();
+    if (!session || revision !== this.revision || this.refreshTask) return;
+    const signal = this.args.signal();
+    const task = this.refreshManifest(session, signal);
+    this.refreshTask = task;
+    void task.catch((error: unknown) => {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      this.fail(error, { sessionId: session.response.sessionId, signal }, revision);
+    });
+    const clear = () => {
+      if (this.refreshTask === task) this.refreshTask = null;
+    };
+    void task.then(clear, clear);
+  }
+
+  private requestManifestRefreshIfNeeded(revision: number): void {
+    if (revision !== this.revision) return;
     const currentMs = currentTimeMs(this.args.video);
     const thresholdMs = refreshThresholdMs(this.args.policy.bufferGoalMs);
-    if (this.args.bufferedEndMs() < currentMs + thresholdMs) this.requestManifestRefresh();
+    if (this.args.bufferedEndMs() < currentMs + thresholdMs) {
+      this.requestManifestRefresh(revision);
+    }
   }
 
-  private fail(error: unknown): void {
+  private failureContext(): PlaybackLoopFailureContext {
+    return {
+      sessionId: this.args.session()?.response.sessionId ?? null,
+      signal: this.args.signal(),
+    };
+  }
+
+  private fail(error: unknown, context: PlaybackLoopFailureContext, revision: number): void {
+    if (revision !== this.revision || context.signal.aborted) return;
     this.stop();
-    this.args.error(error instanceof Error ? error : new Error("SABR playback failed"));
+    this.args.error(error instanceof Error ? error : new Error("SABR playback failed"), context);
+  }
+
+  private ensureCurrent(revision: number, signal: AbortSignal): void {
+    if (revision !== this.revision || signal.aborted) {
+      throw new DOMException("Operation aborted", "AbortError");
+    }
   }
 }
 

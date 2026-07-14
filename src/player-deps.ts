@@ -4,7 +4,7 @@ import { HttpClient } from "./http-client";
 import { MediaElementObserver } from "./media-element-observer";
 import { MediaSourceController } from "./media-source-controller";
 import { PlaybackClient } from "./playback-client";
-import { PlaybackLoop } from "./playback-loop";
+import { PlaybackLoop, type PlaybackLoopFailureContext } from "./playback-loop";
 import { bufferedEndMs } from "./player-snapshot";
 import { SegmentScheduler } from "./segment-scheduler";
 import type { LoadedSession } from "./session-loader";
@@ -29,6 +29,8 @@ type Args = {
   signal: () => AbortSignal;
   state: (state: TypeTypeMseState) => void;
   error: (error: Error) => void;
+  progress: (positionMs: number) => void;
+  loopError: (error: Error, context: PlaybackLoopFailureContext) => void;
 };
 
 export function createPlayerDeps(args: Args): PlayerDeps {
@@ -43,6 +45,7 @@ export function createPlayerDeps(args: Args): PlayerDeps {
     video: args.video,
     state: args.state,
     error: args.error,
+    progress: args.progress,
   });
   const media = new MediaSourceController(args.video);
   const scheduler = new SegmentScheduler(http, media, args.emitter, policy.segmentPollLimit);
@@ -56,7 +59,7 @@ export function createPlayerDeps(args: Args): PlayerDeps {
     session: args.session,
     signal: args.signal,
     bufferedEndMs: () => bufferedEndMs(args.video),
-    error: args.error,
+    error: args.loopError,
   });
   const destroy = () => {
     loop.stop();
