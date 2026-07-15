@@ -21,8 +21,13 @@ bun install --frozen-lockfile
 
 The example integration lives under `examples/`. Tests run with `bun:test` and mock the media and network boundaries where browser APIs are not available.
 
-## Implementation expectations
+## Programming preferences
 
+- Use Bun exclusively for package commands and keep TypeScript strict.
+- Do not use `any`; narrow `unknown` values before use and add explicit return types to exported functions.
+- Prefer clear names and structure over explanatory comments, but comments are welcome whenever a contributor finds them useful.
+- Name files in kebab-case, types and classes in PascalCase, functions in camelCase, and constants in SCREAMING_SNAKE_CASE.
+- Split modules before they become difficult to reason about; do not compress code to keep files short.
 - Keep the package independent from any interface framework or player controls.
 - Preserve the TypeType HTTP playback-session contract.
 - Keep operations abortable and isolate stale requests after seeks or session changes.
@@ -30,6 +35,7 @@ The example integration lives under `examples/`. Tests run with `bun:test` and m
 - Keep buffer growth bounded.
 - Add focused tests for startup, segment continuity, seeks, quality changes, recovery, and destroy behavior.
 - Avoid runtime dependencies unless the change has been discussed first.
+- Verify that every new development dependency is compatible with the MIT license.
 - Update exported types and README examples when the public API changes.
 
 ## Required checks
