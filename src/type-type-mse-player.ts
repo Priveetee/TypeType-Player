@@ -1,5 +1,6 @@
 import { decodeStartMs, runDecodePreroll } from "./decode-preroll";
 import { EventEmitter } from "./event-emitter";
+import { LiveEdgeFollower } from "./live-edge-follower";
 import { PlaybackIntent } from "./playback-intent";
 import type { PlaybackLoopFailureContext } from "./playback-loop";
 import { createPlayerDeps, type PlayerDeps } from "./player-deps";
@@ -27,9 +28,11 @@ import type {
   private readonly seekController = new SeekController();
   private readonly operation = new PlayerOperation();
   private readonly playbackRecovery = new PlaybackRecovery();
+  private readonly liveEdgeFollower: LiveEdgeFollower;
   private session: LoadedSession | null = null;
   private pendingPrerollTargetMs: number | null = null;
   private loadTask: Promise<void> | null = null;
+  private liveEdgeCatchUpTask: Promise<void> | null = null;
   private sessionTransition: Promise<void> = Promise.resolve();
   private audioOnly: boolean;
   private recoveryPositionMs: number;
@@ -43,6 +46,7 @@ import type {
     this.video.playsInline = true;
     this.audioOnly = config.audioOnly === true;
     this.recoveryPositionMs = Math.max(0, Math.round(config.startTimeMs ?? 0));
+    this.liveEdgeFollower = new LiveEdgeFollower(config.isLive === true);
     this.deps = createPlayerDeps({
       video,
       config,
@@ -54,6 +58,7 @@ import type {
       progress: (positionMs) => {
         this.rememberRecoveryPosition(positionMs);
         this.playbackRecovery.observeProgress(positionMs);
+        this.followLiveEdge(positionMs);
       },
       loopError: (error, context) => this.handlePlaybackLoopError(error, context),
     });
@@ -96,6 +101,7 @@ import type {
         audioTrackId: this.config.audioTrackId,
         startTimeMs,
         audioOnly: this.audioOnly,
+        ...(this.config.isLive ? { isLive: true } : {}),
       },
       signal,
     );
@@ -125,6 +131,7 @@ import type {
   async seek(positionMs: number): Promise<void> {
     this.playbackIntent.capture(this.video.paused, this.playerState.value === "seeking");
     const targetMs = Math.max(0, Math.round(positionMs));
+    this.liveEdgeFollower.observeUserSeek(targetMs, this.session?.manifest.live);
     this.recoveryPositionMs = targetMs;
     return this.seekController.seek(
       targetMs,
@@ -284,39 +291,43 @@ import type {
       recovery: this.playbackRecovery,
     });
     this.operation.ensureCurrent(this.destroyed, revision);
-    const startMs = decodeStartMs(session.manifest, startTimeMs);
-    if (shouldApplySessionPosition(startTimeMs, finalizePausedSeek)) {
+    const resolvedStartTimeMs =
+      session.response.startTimeMs ?? session.manifest.startTimeMs ?? startTimeMs;
+    this.recoveryPositionMs = resolvedStartTimeMs;
+    const startMs = decodeStartMs(session.manifest, resolvedStartTimeMs);
+    if (shouldApplySessionPosition(resolvedStartTimeMs, finalizePausedSeek)) {
       this.video.currentTime = startMs / 1000;
     }
     this.session = session;
     await this.deps.loop.fillOnce();
     this.operation.ensureCurrent(this.destroyed, revision);
-    if (startTimeMs > startMs) {
+    if (resolvedStartTimeMs > startMs) {
       if (this.playbackIntent.shouldResume) {
-        await runDecodePreroll(this.video, startTimeMs, true, signal);
+        await runDecodePreroll(this.video, resolvedStartTimeMs, true, signal);
         this.pendingPrerollTargetMs = null;
       } else {
         if (finalizePausedSeek) {
-          await runDecodePreroll(this.video, startTimeMs, false, signal, true);
+          await runDecodePreroll(this.video, resolvedStartTimeMs, false, signal, true);
           this.pendingPrerollTargetMs = null;
         } else {
-          this.pendingPrerollTargetMs = startTimeMs;
+          this.pendingPrerollTargetMs = resolvedStartTimeMs;
         }
       }
     } else if (this.playbackIntent.shouldResume) {
       this.pendingPrerollTargetMs = null;
-      if (startTimeMs > 0) {
-        await runDecodePreroll(this.video, startTimeMs, false, signal, true);
+      if (resolvedStartTimeMs > 0) {
+        await runDecodePreroll(this.video, resolvedStartTimeMs, false, signal, true);
       }
       await this.video.play();
-    } else if (finalizePausedSeek && startTimeMs > 0) {
-      await runDecodePreroll(this.video, startTimeMs, false, signal, true);
+    } else if (finalizePausedSeek && resolvedStartTimeMs > 0) {
+      await runDecodePreroll(this.video, resolvedStartTimeMs, false, signal, true);
       this.pendingPrerollTargetMs = null;
     } else {
       this.pendingPrerollTargetMs = null;
     }
     this.operation.ensureCurrent(this.destroyed, revision);
     this.playbackRecovery.complete(currentTimeMs(this.video));
+    this.liveEdgeFollower.initialize(currentTimeMs(this.video), session.manifest.live);
     this.deps.loop.start();
     emitManifest(this.emitter, session.response, session);
     this.playerState.set(this.video.paused ? "ready" : "playing");
@@ -351,6 +362,7 @@ import type {
       current,
       error,
       videoId: this.config.videoId,
+      isLive: this.config.isLive === true,
       startTimeMs: positionMs,
       signal,
       create: (request, recoverySignal) => this.deps.playback.create(request, recoverySignal),
@@ -404,6 +416,33 @@ import type {
     if (Number.isFinite(positionMs) && positionMs > 0) {
       this.recoveryPositionMs = Math.round(positionMs);
     }
+  }
+
+  private followLiveEdge(positionMs: number): void {
+    if (this.destroyed || this.liveEdgeCatchUpTask) return;
+    const targetMs = this.liveEdgeFollower.nextTarget({
+      positionMs,
+      live: this.session?.manifest.live,
+      paused: this.video.paused,
+      busy: this.playerState.value === "loading" || this.playerState.value === "seeking",
+      nowMs: Date.now(),
+    });
+    if (targetMs === null) return;
+    this.playbackIntent.capture(this.video.paused, this.playerState.value === "seeking");
+    const task = this.seekController
+      .seek(
+        targetMs,
+        `live-edge:${targetMs}`,
+        (target) => this.performSeek(target),
+        () => this.operation.abort(),
+      )
+      .catch((error: unknown) => {
+        if (!isAbortError(error)) this.rememberRecoveryPosition(currentTimeMs(this.video));
+      })
+      .finally(() => {
+        if (this.liveEdgeCatchUpTask === task) this.liveEdgeCatchUpTask = null;
+      });
+    this.liveEdgeCatchUpTask = task;
   }
 
   /** Serializes MediaSource ownership transitions. */
