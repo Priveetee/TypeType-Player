@@ -30,6 +30,7 @@ function window(request: PlaybackWindowRequest): PlaybackWindow {
 test("refreshes rapidly only while the playback buffer is below its low watermark", async () => {
   let bufferedEndMs = 5_000;
   let positionCalls = 0;
+  let fillCalls = 0;
   const session: LoadedSession = {
     response: {
       sessionId: "session",
@@ -54,7 +55,11 @@ test("refreshes rapidly only while the playback buffer is below its low watermar
       segments: async (_sessionId, request) => window(request),
     },
     media: { bufferedRanges: () => [], endOfStream: () => false, trim: async () => undefined },
-    scheduler: { fill: async () => undefined },
+    scheduler: {
+      fill: async () => {
+        fillCalls += 1;
+      },
+    },
     emitter: { emit: () => undefined },
     policy: {
       bufferGoalMs: 30_000,
@@ -75,16 +80,19 @@ test("refreshes rapidly only while the playback buffer is below its low watermar
   await loop.fillOnce();
   await Bun.sleep(0);
   expect(positionCalls).toBe(1);
+  expect(fillCalls).toBe(2);
 
   bufferedEndMs = 20_000;
   await loop.fillOnce();
   await Bun.sleep(0);
   expect(positionCalls).toBe(1);
+  expect(fillCalls).toBe(3);
 
   bufferedEndMs = 19_999;
   await loop.fillOnce();
   await Bun.sleep(0);
   expect(positionCalls).toBe(2);
+  expect(fillCalls).toBe(5);
 });
 
 test("closes the media source after appending the final window", async () => {
@@ -302,7 +310,7 @@ test("waits for an active manifest refresh before becoming quiescent", async () 
     bufferedEndMs: () => 0,
     error: () => undefined,
   });
-  await loop.fillOnce();
+  const fill = loop.fillOnce();
   await Bun.sleep(0);
   let quiescent = false;
   const quiesce = loop.quiesce().then(() => {
@@ -325,7 +333,7 @@ test("waits for an active manifest refresh before becoming quiescent", async () 
       bufferedRanges: [],
     }),
   );
-  await quiesce;
+  await Promise.all([fill, quiesce]);
 
   expect(quiescent).toBe(true);
 });

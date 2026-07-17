@@ -38,3 +38,18 @@ test("rejects invalid buffer values", () => {
   expect(policy.manifestPollLimit).toBe(60);
   expect(policy.segmentPollLimit).toBe(7);
 });
+
+test("uses a live buffer goal that fits behind the server live edge", () => {
+  const policy = resolveBufferPolicy({
+    endpoint: "https://example.com/api",
+    videoId: "live-video",
+    videoItag: 299,
+    audioItag: 140,
+    audioTrackId: null,
+    isLive: true,
+  });
+  expect(policy.bufferGoalMs).toBe(8_000);
+  expect(policy.backBufferMs).toBe(30_000);
+  expect(policy.pollIntervalMs).toBe(250);
+  expect(policy.manifestRefreshMs).toBe(1_000);
+});

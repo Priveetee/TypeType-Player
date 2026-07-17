@@ -96,6 +96,23 @@ export class PlaybackLoop {
     const goalMs = currentMs + bufferGoalMs;
     await this.args.scheduler.fill(session.manifest, currentMs, goalMs, signal);
     this.ensureCurrent(revision, signal);
+    if (
+      !session.manifest.endOfStream &&
+      this.args.bufferedEndMs() < currentMs + refreshThresholdMs(bufferGoalMs)
+    ) {
+      this.requestManifestRefresh(revision);
+      const refresh = this.refreshTask;
+      if (refresh) {
+        try {
+          await refresh;
+        } catch {
+          return;
+        }
+        this.ensureCurrent(revision, signal);
+        await this.args.scheduler.fill(session.manifest, currentMs, goalMs, signal);
+        this.ensureCurrent(revision, signal);
+      }
+    }
     await this.args.media.trim(currentMs, this.args.policy.backBufferMs);
     this.ensureCurrent(revision, signal);
     const bufferedEndMs = this.args.bufferedEndMs();
@@ -107,9 +124,6 @@ export class PlaybackLoop {
     if (session.manifest.endOfStream && this.args.media.endOfStream()) {
       this.stop();
       return;
-    }
-    if (bufferedEndMs < currentMs + refreshThresholdMs(bufferGoalMs)) {
-      this.requestManifestRefresh(revision);
     }
   }
 
