@@ -418,6 +418,7 @@ import type {
     }
   }
 
+  /** Keeps active live playback within the configured edge latency. */
   private followLiveEdge(positionMs: number): void {
     if (this.destroyed || this.liveEdgeCatchUpTask) return;
     const targetMs = this.liveEdgeFollower.nextTarget({
