@@ -1,5 +1,10 @@
 /** Browser Media Source Extensions engine for TypeType SABR playback. */
-export type { ManifestSegment, ManifestTrack, PlaybackManifest } from "./manifest";
+export type {
+  LivePlaybackWindow,
+  ManifestSegment,
+  ManifestTrack,
+  PlaybackManifest,
+} from "./manifest";
 export type {
   PlaybackBufferedRange,
   PlaybackWindow,

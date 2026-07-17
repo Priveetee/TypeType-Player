@@ -15,10 +15,24 @@ export type ManifestTrack = {
   segments: ManifestSegment[];
 };
 
+/** Dynamic timing information for an active live stream or a completed live DVR. */
+export type LivePlaybackWindow = {
+  active: boolean;
+  postLiveDvr: boolean;
+  headSequence: number;
+  headTimeMs: number;
+  seekableStartMs: number;
+  seekableEndMs: number;
+  atLiveEdge: boolean;
+  targetLatencyMs: number;
+};
+
 /** Browser-ready tracks for the current playback window. */
 export type PlaybackManifest = {
   durationMs: number;
   endOfStream: boolean;
+  startTimeMs?: number;
+  live?: LivePlaybackWindow | null;
   audio: ManifestTrack;
   video: ManifestTrack | null;
 };

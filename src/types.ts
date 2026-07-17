@@ -21,6 +21,7 @@ export type TypeTypeMseConfig = {
   audioItag: number;
   audioTrackId: string | null;
   audioOnly?: boolean;
+  isLive?: boolean;
   startTimeMs?: number;
   headers?: HeadersInit;
   bufferGoalMs?: number;

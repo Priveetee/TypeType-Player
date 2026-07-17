@@ -42,6 +42,41 @@ test("parses native playback windows", () => {
   );
 });
 
+test("parses active live timing and the server-resolved start position", () => {
+  const window = parsePlaybackWindow(
+    {
+      sessionId: "live-session",
+      generation: 4,
+      ready: true,
+      startTimeMs: 3_590_000,
+      durationMs: 3_600_000,
+      endOfStream: false,
+      live: {
+        active: true,
+        postLiveDvr: false,
+        headSequence: 720,
+        headTimeMs: 3_600_000,
+        seekableStartMs: 0,
+        seekableEndMs: 3_600_000,
+        atLiveEdge: true,
+        targetLatencyMs: 10_000,
+      },
+      audio: {
+        mime: 'audio/mp4; codecs="mp4a.40.2"',
+        initUrl: "/api/sabr/playback/live-session/140/init?generation=4",
+        segments: [],
+      },
+      video: null,
+    },
+    "https://beta.typetype.video/api/sabr/playback/live-session/segments",
+  );
+
+  expect(window.startTimeMs).toBe(3_590_000);
+  expect(window.live).toMatchObject({ active: true, headSequence: 720, atLiveEdge: true });
+  expect(window.manifest?.startTimeMs).toBe(3_590_000);
+  expect(window.manifest?.live?.seekableEndMs).toBe(3_600_000);
+});
+
 test("parses playback window recovery hints", () => {
   const window = parsePlaybackWindow(
     {
