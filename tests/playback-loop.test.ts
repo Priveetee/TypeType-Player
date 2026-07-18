@@ -45,7 +45,7 @@ test("refreshes rapidly only while the playback buffer is below its low watermar
     audioTrackId: null,
   };
   const loop = new PlaybackLoop({
-    video: { currentTime: 0 },
+    video: { currentTime: 0, paused: false, readyState: 4 },
     playback: {
       position: async (_sessionId, request) => {
         positionCalls += 1;
@@ -111,7 +111,7 @@ test("closes the media source after appending the final window", async () => {
     audioTrackId: null,
   };
   const loop = new PlaybackLoop({
-    video: { currentTime: 119 },
+    video: { currentTime: 119, paused: false, readyState: 4 },
     playback: {
       position: async (_sessionId, request) => window(request),
       prefetch: async (_sessionId, request) => window(request),
@@ -168,7 +168,7 @@ test("reports a terminal refresh with its exact session and operation signal", a
   let failedSessionId: string | null = null;
   let failedSignal: AbortSignal | null = null;
   const loop = new PlaybackLoop({
-    video: { currentTime: 379.441 },
+    video: { currentTime: 379.441, paused: false, readyState: 4 },
     playback: {
       position: async (_sessionId, request) => window(request),
       prefetch: async (_sessionId, request) => ({
@@ -229,7 +229,7 @@ test("waits for an active fill before becoming quiescent", async () => {
     audioOnly: false,
   };
   const loop = new PlaybackLoop({
-    video: { currentTime: 0 },
+    video: { currentTime: 0, paused: false, readyState: 4 },
     playback: {
       position: async (_sessionId, request) => window(request),
       prefetch: async (_sessionId, request) => window(request),
@@ -288,7 +288,7 @@ test("waits for an active manifest refresh before becoming quiescent", async () 
     audioOnly: false,
   };
   const loop = new PlaybackLoop({
-    video: { currentTime: 0 },
+    video: { currentTime: 0, paused: false, readyState: 4 },
     playback: {
       position: async () => pendingPosition,
       prefetch: async (_sessionId, request) => window(request),
@@ -362,7 +362,7 @@ test("does not attach a stale fill rejection to a restarted loop", async () => {
     audioOnly: false,
   };
   const loop = new PlaybackLoop({
-    video: { currentTime: 0 },
+    video: { currentTime: 0, paused: false, readyState: 4 },
     playback: {
       position: async (_sessionId, request) => window(request),
       prefetch: async (_sessionId, request) => window(request),

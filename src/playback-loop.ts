@@ -8,7 +8,7 @@ import type { LoadedSession } from "./session-loader";
 import { refreshPlaybackWindow } from "./session-loader";
 
 type PlaybackLoopArgs = {
-  video: { currentTime: number };
+  video: { currentTime: number; paused: boolean; readyState: number };
   playback: Pick<PlaybackClient, "position" | "prefetch" | "segments">;
   media: Pick<MediaSourceController, "bufferedRanges" | "endOfStream" | "trim">;
   scheduler: Pick<SegmentScheduler, "fill">;
@@ -160,7 +160,12 @@ export class PlaybackLoop {
     if (revision !== this.revision) return;
     const currentMs = currentTimeMs(this.args.video);
     const thresholdMs = refreshThresholdMs(this.args.policy.bufferGoalMs);
-    if (this.args.bufferedEndMs() < currentMs + thresholdMs) {
+    const session = this.args.session();
+    const waitingForLiveData =
+      session?.manifest.live?.active === true &&
+      !this.args.video.paused &&
+      this.args.video.readyState < HAVE_FUTURE_DATA;
+    if (waitingForLiveData || this.args.bufferedEndMs() < currentMs + thresholdMs) {
       this.requestManifestRefresh(revision);
     }
   }
@@ -188,3 +193,5 @@ export class PlaybackLoop {
 function refreshThresholdMs(bufferGoalMs: number): number {
   return Math.min(bufferGoalMs, Math.max(5_000, Math.round((bufferGoalMs * 2) / 3)));
 }
+
+const HAVE_FUTURE_DATA = 3;
