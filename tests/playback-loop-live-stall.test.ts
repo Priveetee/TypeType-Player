@@ -40,9 +40,11 @@ function playbackWindow(request: PlaybackWindowRequest): PlaybackWindow {
 function createLoop(video: { currentTime: number; paused: boolean; readyState: number }): {
   loop: PlaybackLoop;
   positionCalls: () => number;
+  fillGoals: number[];
   failures: Error[];
 } {
   let calls = 0;
+  const fillGoals: number[] = [];
   const failures: Error[] = [];
   const session: LoadedSession = {
     response: {
@@ -69,7 +71,11 @@ function createLoop(video: { currentTime: number; paused: boolean; readyState: n
       segments: async (_sessionId, request) => playbackWindow(request),
     },
     media: { bufferedRanges: () => [], endOfStream: () => false, trim: async () => undefined },
-    scheduler: { fill: async () => undefined },
+    scheduler: {
+      fill: async (_manifest, _currentMs, goalMs) => {
+        fillGoals.push(goalMs);
+      },
+    },
     emitter: { emit: () => undefined },
     policy: {
       bufferGoalMs: 8_000,
@@ -84,21 +90,23 @@ function createLoop(video: { currentTime: number; paused: boolean; readyState: n
     bufferedEndMs: () => 20_000,
     error: (error) => failures.push(error),
   });
-  return { loop, positionCalls: () => calls, failures };
+  return { loop, positionCalls: () => calls, fillGoals, failures };
 }
 
-test("refreshes a stalled active live despite its reported buffer", async () => {
-  const { loop, positionCalls, failures } = createLoop({
+test("refreshes and extends a stalled active live despite its reported buffer", async () => {
+  const { loop, positionCalls, fillGoals, failures } = createLoop({
     currentTime: 10,
     paused: false,
     readyState: 2,
   });
 
   loop.start();
+  await loop.fillOnce();
   await Bun.sleep(10);
   await loop.quiesce();
 
   expect(positionCalls()).toBeGreaterThan(0);
+  expect(fillGoals.some((goalMs) => goalMs > 18_000)).toBe(true);
   expect(failures).toHaveLength(0);
 });
 

@@ -93,7 +93,7 @@ export class PlaybackLoop {
   ): Promise<void> {
     const currentMs = currentTimeMs(this.args.video);
     const bufferGoalMs = this.args.policy.bufferGoalMs;
-    const goalMs = currentMs + bufferGoalMs;
+    const goalMs = currentMs + bufferGoalMs + this.liveStallRecoveryMs(bufferGoalMs);
     await this.args.scheduler.fill(session.manifest, currentMs, goalMs, signal);
     this.ensureCurrent(revision, signal);
     if (
@@ -161,13 +161,22 @@ export class PlaybackLoop {
     const currentMs = currentTimeMs(this.args.video);
     const thresholdMs = refreshThresholdMs(this.args.policy.bufferGoalMs);
     const session = this.args.session();
-    const waitingForLiveData =
-      session?.manifest.live?.active === true &&
-      !this.args.video.paused &&
-      this.args.video.readyState < HAVE_FUTURE_DATA;
+    const waitingForLiveData = this.waitingForLiveData(session);
     if (waitingForLiveData || this.args.bufferedEndMs() < currentMs + thresholdMs) {
       this.requestManifestRefresh(revision);
     }
+  }
+
+  private liveStallRecoveryMs(bufferGoalMs: number): number {
+    return this.waitingForLiveData(this.args.session()) ? refreshThresholdMs(bufferGoalMs) : 0;
+  }
+
+  private waitingForLiveData(session: LoadedSession | null): boolean {
+    return (
+      session?.manifest.live?.active === true &&
+      !this.args.video.paused &&
+      this.args.video.readyState < HAVE_FUTURE_DATA
+    );
   }
 
   private failureContext(): PlaybackLoopFailureContext {
