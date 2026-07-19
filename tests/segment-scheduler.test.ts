@@ -45,6 +45,34 @@ test("never appends a late segment behind the buffered track edge", async () => 
   expect(appended).toEqual(["/41", "/42", "/43"]);
 });
 
+test("appends a self-initializing live segment only once", async () => {
+  const requested: string[] = [];
+  let requestedUrl = "";
+  const http = {
+    response: async (url: string) => {
+      requestedUrl = url;
+      requested.push(url);
+      return new Response(new Uint8Array([1]));
+    },
+  } as HttpClient;
+  const appended: string[] = [];
+  const media = {
+    append: async () => appended.push(requestedUrl),
+  } as MediaSourceController;
+  const scheduler = new SegmentScheduler(http, media, { emit: () => undefined } as EventEmitter, 1);
+  const liveManifest = manifest([
+    { url: "/40", startMs: 390_000, durationMs: 10_000 },
+    { url: "/41", startMs: 400_000, durationMs: 10_000 },
+  ]);
+  liveManifest.audio.initUrl = "/40";
+
+  await scheduler.appendInit(liveManifest);
+  await scheduler.fill(liveManifest, 390_000, 410_000);
+
+  expect(requested).toEqual(["/40", "/41"]);
+  expect(appended).toEqual(["/40", "/41"]);
+});
+
 test("rejects fetched bytes from a superseded scheduler revision", async () => {
   let releaseResponse: ((response: Response) => void) | null = null;
   const pendingResponse = new Promise<Response>((resolve) => {

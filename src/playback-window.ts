@@ -1,4 +1,9 @@
-import type { ManifestSegment, ManifestTrack, PlaybackManifest } from "./manifest";
+import type {
+  LivePlaybackWindow,
+  ManifestSegment,
+  ManifestTrack,
+  PlaybackManifest,
+} from "./manifest";
 import type { TrackKind } from "./types";
 
 /** Buffered media interval reported to the backend for a specific format. */
@@ -39,6 +44,8 @@ export type PlaybackWindow = {
   status: string | null;
   blockedBy: string | null;
   bufferedEdgeMs: number | null;
+  startTimeMs?: number | null;
+  live?: LivePlaybackWindow | null;
   manifest: PlaybackManifest | null;
 };
 
@@ -63,6 +70,34 @@ function numberField(value: object, key: string): number | null {
 
 function booleanField(value: object, key: string): boolean {
   return field(value, key) === true;
+}
+
+export function parseLivePlaybackWindow(value: unknown): LivePlaybackWindow | null {
+  if (!value || typeof value !== "object") return null;
+  const headSequence = numberField(value, "headSequence");
+  const headTimeMs = numberField(value, "headTimeMs");
+  const seekableStartMs = numberField(value, "seekableStartMs");
+  const seekableEndMs = numberField(value, "seekableEndMs");
+  const targetLatencyMs = numberField(value, "targetLatencyMs");
+  if (
+    headSequence === null ||
+    headTimeMs === null ||
+    seekableStartMs === null ||
+    seekableEndMs === null ||
+    targetLatencyMs === null
+  ) {
+    return null;
+  }
+  return {
+    active: booleanField(value, "active"),
+    postLiveDvr: booleanField(value, "postLiveDvr"),
+    headSequence,
+    headTimeMs,
+    seekableStartMs,
+    seekableEndMs,
+    atLiveEdge: booleanField(value, "atLiveEdge"),
+    targetLatencyMs,
+  };
 }
 
 function arrayField(value: object, key: string): unknown[] {
@@ -109,13 +144,17 @@ function parseTrack(kind: TrackKind, value: object, baseUrl: string): ManifestTr
 
 function parseManifest(value: object, baseUrl: string): PlaybackManifest | null {
   const durationMs = numberField(value, "durationMs") ?? 0;
+  const startTimeMs = numberField(value, "startTimeMs") ?? 0;
   const endOfStream = booleanField(value, "endOfStream");
+  const live = parseLivePlaybackWindow(field(value, "live"));
   const audioValue = objectField(value, "audio");
   const videoValue = objectField(value, "video");
   if (!audioValue) return null;
   const audio = parseTrack("audio", audioValue, baseUrl);
   const video = videoValue ? parseTrack("video", videoValue, baseUrl) : null;
-  return audio && (!videoValue || video) ? { durationMs, endOfStream, audio, video } : null;
+  return audio && (!videoValue || video)
+    ? { durationMs, endOfStream, startTimeMs, live, audio, video }
+    : null;
 }
 
 export function parsePlaybackWindow(value: unknown, baseUrl: string): PlaybackWindow {
@@ -134,6 +173,8 @@ export function parsePlaybackWindow(value: unknown, baseUrl: string): PlaybackWi
     status: stringField(value, "status"),
     blockedBy: stringField(value, "blockedBy"),
     bufferedEdgeMs: numberField(value, "bufferedEdgeMs"),
+    startTimeMs: numberField(value, "startTimeMs"),
+    live: parseLivePlaybackWindow(field(value, "live")),
     manifest: parseManifest(manifestValue, baseUrl),
   };
 }

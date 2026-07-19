@@ -123,10 +123,41 @@ test("attach releases each old layout before repeated track changes", async () =
   expect(video.src).toBe("blob:replacement-6");
 });
 
+test("updates the MSE live seekable range as the live head advances", () => {
+  const mediaSource = new FakeMediaSource();
+  const { video } = videoElement("blob:live");
+  const controller = new MediaSourceController(video);
+  const state = controller as unknown as ControllerState;
+  state.objectUrl = "blob:live";
+  state.mediaSource = mediaSource as unknown as MediaSource;
+  const liveManifest: PlaybackManifest = {
+    ...manifest(true),
+    live: {
+      active: true,
+      postLiveDvr: false,
+      headSequence: 72,
+      headTimeMs: 120_000,
+      seekableStartMs: 30_000,
+      seekableEndMs: 120_000,
+      atLiveEdge: true,
+      targetLatencyMs: 10_000,
+    },
+  };
+
+  controller.updateTiming(liveManifest);
+  expect(mediaSource.duration).toBe(Number.POSITIVE_INFINITY);
+  expect(mediaSource.liveRange).toEqual([30, 120]);
+
+  controller.updateTiming({ ...liveManifest, live: { ...liveManifest.live, active: false } });
+  expect(mediaSource.liveRange).toBeNull();
+  expect(mediaSource.duration).toBe(120);
+});
+
 class FakeMediaSource {
   readonly sourceBuffers: SourceBuffer[] = [];
   readonly removed: SourceBuffer[] = [];
   duration = Number.NaN;
+  liveRange: [number, number] | null = null;
   readyState: ReadyState;
   private readonly listeners = new Map<string, () => void>();
 
@@ -153,6 +184,14 @@ class FakeMediaSource {
   removeSourceBuffer(buffer: SourceBuffer): void {
     this.removed.push(buffer);
     this.sourceBuffers.splice(this.sourceBuffers.indexOf(buffer), 1);
+  }
+
+  setLiveSeekableRange(start: number, end: number): void {
+    this.liveRange = [start, end];
+  }
+
+  clearLiveSeekableRange(): void {
+    this.liveRange = null;
   }
 
   open(): void {

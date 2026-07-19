@@ -111,6 +111,7 @@ type RecoverArgs = {
   current: LoadedSession;
   error: PlaybackWindowRecoveryError;
   videoId: string;
+  isLive?: boolean;
   startTimeMs: number;
   signal: AbortSignal;
   create: (request: CreatePlaybackRequest, signal: AbortSignal) => Promise<PlaybackResponse>;
@@ -137,6 +138,7 @@ export async function recoverPlaybackSession(args: RecoverArgs): Promise<LoadedS
           audioTrackId: args.current.audioTrackId,
           startTimeMs: args.startTimeMs,
           audioOnly: args.current.audioOnly,
+          ...(args.isLive ? { isLive: true } : {}),
         },
         args.signal,
       );

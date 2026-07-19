@@ -62,10 +62,24 @@ class PlaybackWindowTimeoutError extends Error {
 }
 
 export async function loadPlaybackSession(args: LoadSessionArgs): Promise<LoadedSession> {
-  const request = { ...playbackWindowRequest(args, args.startTimeMs), bufferedRanges: [] };
+  const startTimeMs = args.response.startTimeMs ?? args.startTimeMs;
+  const request = { ...playbackWindowRequest(args, startTimeMs), bufferedRanges: [] };
   const window = await waitForWindow(args, args.response.sessionId, request);
   if (!window.manifest) throw new Error("Playback window is not ready");
-  return attachSession(args, { ...args.response, generation: window.generation }, window.manifest);
+  const resolvedStartTimeMs =
+    window.startTimeMs ??
+    window.manifest.startTimeMs ??
+    args.response.startTimeMs ??
+    args.startTimeMs;
+  const live = window.live ?? window.manifest.live ?? args.response.live ?? null;
+  const response = {
+    ...args.response,
+    generation: window.generation,
+    startTimeMs: resolvedStartTimeMs,
+    live,
+  };
+  const manifest = { ...window.manifest, startTimeMs: resolvedStartTimeMs, live };
+  return attachSession(args, response, manifest);
 }
 
 async function attachSession(
@@ -95,7 +109,8 @@ function ensureNotAborted(signal: AbortSignal): void {
 
 export async function refreshPlaybackWindow(
   playback: Pick<PlaybackClient, "position" | "prefetch" | "segments">,
-  media: Pick<MediaSourceController, "bufferedRanges">,
+  media: Pick<MediaSourceController, "bufferedRanges"> &
+    Partial<Pick<MediaSourceController, "updateTiming">>,
   session: LoadedSession,
   policy: BufferPolicy,
   playerTimeMs: number,
@@ -109,8 +124,15 @@ export async function refreshPlaybackWindow(
   );
   if (!window?.manifest) return;
   ensureNotAborted(signal);
-  session.response = { ...session.response, generation: window.generation };
-  session.manifest = window.manifest;
+  const startTimeMs =
+    window.startTimeMs ??
+    window.manifest.startTimeMs ??
+    session.response.startTimeMs ??
+    playerTimeMs;
+  const live = window.live ?? window.manifest.live ?? session.response.live ?? null;
+  session.response = { ...session.response, generation: window.generation, startTimeMs, live };
+  session.manifest = { ...window.manifest, startTimeMs, live };
+  media.updateTiming?.(session.manifest);
 }
 
 function playbackWindowRequest(

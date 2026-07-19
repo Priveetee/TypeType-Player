@@ -1,7 +1,9 @@
 import type { HttpClient } from "./http-client";
+import type { LivePlaybackWindow } from "./manifest";
 import {
   type PlaybackWindow,
   type PlaybackWindowRequest,
+  parseLivePlaybackWindow,
   parsePlaybackWindow,
 } from "./playback-window";
 
@@ -11,6 +13,8 @@ export type PlaybackResponse = {
   generation: number | null;
   ready: boolean;
   retryAfterMs: number | null;
+  startTimeMs?: number | null;
+  live?: LivePlaybackWindow | null;
 };
 
 export type CreatePlaybackRequest = {
@@ -20,6 +24,7 @@ export type CreatePlaybackRequest = {
   audioTrackId: string | null;
   startTimeMs: number;
   audioOnly: boolean;
+  isLive?: boolean;
 };
 
 export type SeekPlaybackOptions = {
@@ -54,6 +59,8 @@ function parsePlaybackResponse(value: unknown): PlaybackResponse {
     generation: numberField(value, "generation"),
     ready: field(value, "ready") === true,
     retryAfterMs: numberField(value, "retryAfterMs"),
+    startTimeMs: numberField(value, "startTimeMs"),
+    live: parseLivePlaybackWindow(field(value, "live")),
   };
 }
 
@@ -68,6 +75,7 @@ export class PlaybackClient {
     });
     if (request.audioTrackId) params.set("audioTrackId", request.audioTrackId);
     if (request.audioOnly) params.set("audioOnly", "true");
+    if (request.isLive) params.set("isLive", "true");
     const videoId = encodeURIComponent(request.videoId);
     const init = signal ? { method: "POST", signal } : { method: "POST" };
     const response = await this.http.json(`/sabr/playback/${videoId}?${params}`, init);

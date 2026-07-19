@@ -62,6 +62,7 @@ async function loadSelectedSession(
   response: LoadedSession["response"],
   selection: TrackSelection,
 ): Promise<LoadedSession> {
+  const requestedStartTimeMs = response.startTimeMs ?? args.startTimeMs;
   const session = await loadPlaybackSession({
     playback: args.deps.playback,
     media: args.deps.media,
@@ -72,15 +73,17 @@ async function loadSelectedSession(
     audioItag: selection.audioItag,
     audioTrackId: selection.audioTrackId,
     audioOnly: args.config.audioOnly === true,
-    startTimeMs: args.startTimeMs,
+    startTimeMs: requestedStartTimeMs,
     policy: args.deps.policy,
     signal: args.signal,
   });
-  const fillStartMs = decodeStartMs(session.manifest, args.startTimeMs);
+  const startTimeMs =
+    session.response.startTimeMs ?? session.manifest.startTimeMs ?? requestedStartTimeMs;
+  const fillStartMs = decodeStartMs(session.manifest, startTimeMs);
   await args.deps.scheduler.fill(
     session.manifest,
     fillStartMs,
-    args.startTimeMs + args.deps.policy.bufferGoalMs,
+    startTimeMs + args.deps.policy.bufferGoalMs,
     args.signal,
   );
   if (args.signal.aborted) throw new DOMException("Operation aborted", "AbortError");
@@ -109,6 +112,7 @@ async function recoverInitialSession(
           audioTrackId: selection.audioTrackId,
           startTimeMs: args.startTimeMs,
           audioOnly: args.config.audioOnly === true,
+          ...(args.config.isLive ? { isLive: true } : {}),
         },
         args.signal,
       );

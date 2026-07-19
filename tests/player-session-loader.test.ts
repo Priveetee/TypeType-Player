@@ -35,6 +35,78 @@ function response(sessionId: string, videoId = "V_YKnVyUJgQ"): PlaybackResponse 
   return { sessionId, videoId, generation: 1, ready: false, retryAfterMs: null };
 }
 
+test("uses the server-resolved live start for the first window and buffer fill", async () => {
+  const requestedPositions: number[] = [];
+  const filledWindows: Array<[number, number]> = [];
+  const live = {
+    active: true,
+    postLiveDvr: false,
+    headSequence: 12,
+    headTimeMs: 72_000,
+    seekableStartMs: 0,
+    seekableEndMs: 72_000,
+    atLiveEdge: true,
+    targetLatencyMs: 10_000,
+  };
+  const session = await loadPlayerSession({
+    deps: {
+      playback: {
+        create: async () => response("unused"),
+        position: async (sessionId, request) => {
+          requestedPositions.push(request.playerTimeMs);
+          return { ...window(sessionId, request.generation, false), startTimeMs: 60_000, live };
+        },
+        prefetch: async (sessionId, request) => ({
+          ...window(sessionId, request.generation, true),
+          startTimeMs: 60_000,
+          live,
+          manifest: { ...manifest, startTimeMs: 60_000, live },
+        }),
+        segments: async (sessionId, request) => ({
+          ...window(sessionId, request.generation, true),
+          startTimeMs: 60_000,
+          live,
+          manifest: { ...manifest, startTimeMs: 60_000, live },
+        }),
+      },
+      media: { attach: async () => undefined, bufferedRanges: () => [] },
+      scheduler: {
+        reset: () => undefined,
+        appendInit: async () => undefined,
+        fill: async (_manifest, startMs, endMs) => filledWindows.push([startMs, endMs]),
+      },
+      policy: {
+        bufferGoalMs: 30_000,
+        backBufferMs: 30_000,
+        pollIntervalMs: 500,
+        manifestRefreshMs: 8_000,
+        manifestPollLimit: 2,
+        segmentPollLimit: 2,
+      },
+    },
+    config: {
+      endpoint: "https://beta.typetype.video/api",
+      videoId: "live-video",
+      videoItag: 137,
+      audioItag: 140,
+      audioTrackId: null,
+      isLive: true,
+    },
+    video: { currentTime: 0 },
+    response: { ...response("live-session", "live-video"), startTimeMs: 60_000, live },
+    current: null,
+    quality: undefined,
+    startTimeMs: 0,
+    signal: new AbortController().signal,
+    recovery: new PlaybackRecovery(),
+  });
+
+  expect(requestedPositions).toEqual([60_000]);
+  expect(filledWindows).toEqual([[59_000, 90_000]]);
+  expect(session.response.startTimeMs).toBe(60_000);
+  expect(session.manifest.live?.active).toBe(true);
+});
+
 test("recovers terminal seek windows with a fresh lower video itag session", async () => {
   const createVideoItags: number[] = [];
   const attached: PlaybackManifest[] = [];

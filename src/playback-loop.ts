@@ -8,7 +8,7 @@ import type { LoadedSession } from "./session-loader";
 import { refreshPlaybackWindow } from "./session-loader";
 
 type PlaybackLoopArgs = {
-  video: { currentTime: number };
+  video: { currentTime: number; paused: boolean; readyState: number };
   playback: Pick<PlaybackClient, "position" | "prefetch" | "segments">;
   media: Pick<MediaSourceController, "bufferedRanges" | "endOfStream" | "trim">;
   scheduler: Pick<SegmentScheduler, "fill">;
@@ -93,9 +93,26 @@ export class PlaybackLoop {
   ): Promise<void> {
     const currentMs = currentTimeMs(this.args.video);
     const bufferGoalMs = this.args.policy.bufferGoalMs;
-    const goalMs = currentMs + bufferGoalMs;
+    const goalMs = currentMs + bufferGoalMs + this.liveStallRecoveryMs(bufferGoalMs);
     await this.args.scheduler.fill(session.manifest, currentMs, goalMs, signal);
     this.ensureCurrent(revision, signal);
+    if (
+      !session.manifest.endOfStream &&
+      this.args.bufferedEndMs() < currentMs + refreshThresholdMs(bufferGoalMs)
+    ) {
+      this.requestManifestRefresh(revision);
+      const refresh = this.refreshTask;
+      if (refresh) {
+        try {
+          await refresh;
+        } catch {
+          return;
+        }
+        this.ensureCurrent(revision, signal);
+        await this.args.scheduler.fill(session.manifest, currentMs, goalMs, signal);
+        this.ensureCurrent(revision, signal);
+      }
+    }
     await this.args.media.trim(currentMs, this.args.policy.backBufferMs);
     this.ensureCurrent(revision, signal);
     const bufferedEndMs = this.args.bufferedEndMs();
@@ -107,9 +124,6 @@ export class PlaybackLoop {
     if (session.manifest.endOfStream && this.args.media.endOfStream()) {
       this.stop();
       return;
-    }
-    if (bufferedEndMs < currentMs + refreshThresholdMs(bufferGoalMs)) {
-      this.requestManifestRefresh(revision);
     }
   }
 
@@ -146,9 +160,23 @@ export class PlaybackLoop {
     if (revision !== this.revision) return;
     const currentMs = currentTimeMs(this.args.video);
     const thresholdMs = refreshThresholdMs(this.args.policy.bufferGoalMs);
-    if (this.args.bufferedEndMs() < currentMs + thresholdMs) {
+    const session = this.args.session();
+    const waitingForLiveData = this.waitingForLiveData(session);
+    if (waitingForLiveData || this.args.bufferedEndMs() < currentMs + thresholdMs) {
       this.requestManifestRefresh(revision);
     }
+  }
+
+  private liveStallRecoveryMs(bufferGoalMs: number): number {
+    return this.waitingForLiveData(this.args.session()) ? refreshThresholdMs(bufferGoalMs) : 0;
+  }
+
+  private waitingForLiveData(session: LoadedSession | null): boolean {
+    return (
+      session?.manifest.live?.active === true &&
+      !this.args.video.paused &&
+      this.args.video.readyState < HAVE_FUTURE_DATA
+    );
   }
 
   private failureContext(): PlaybackLoopFailureContext {
@@ -174,3 +202,5 @@ export class PlaybackLoop {
 function refreshThresholdMs(bufferGoalMs: number): number {
   return Math.min(bufferGoalMs, Math.max(5_000, Math.round((bufferGoalMs * 2) / 3)));
 }
+
+const HAVE_FUTURE_DATA = 3;

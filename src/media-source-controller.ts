@@ -81,17 +81,23 @@ export class MediaSourceController {
     manifest: PlaybackManifest,
   ): Promise<void> {
     await Promise.all([this.audioQueue?.reset(), this.videoQueue?.reset()]);
-    mediaSource.duration = manifest.durationMs > 0 ? manifest.durationMs / 1000 : Number.NaN;
+    this.applyTiming(mediaSource, manifest);
   }
 
   private createSourceBuffers(mediaSource: MediaSource, manifest: PlaybackManifest): void {
-    mediaSource.duration = manifest.durationMs > 0 ? manifest.durationMs / 1000 : Number.NaN;
+    this.applyTiming(mediaSource, manifest);
     this.audioQueue = new AppendQueue(mediaSource.addSourceBuffer(manifest.audio.mime));
     this.videoQueue = manifest.video
       ? new AppendQueue(mediaSource.addSourceBuffer(manifest.video.mime))
       : null;
     this.audioMime = manifest.audio.mime;
     this.videoMime = manifest.video?.mime ?? null;
+  }
+
+  updateTiming(manifest: PlaybackManifest): void {
+    const mediaSource = this.mediaSource;
+    if (mediaSource?.readyState !== "open") return;
+    this.applyTiming(mediaSource, manifest);
   }
 
   append(kind: TrackKind, data: ArrayBuffer): Promise<void> {
@@ -172,5 +178,20 @@ export class MediaSourceController {
     this.videoQueue = null;
     this.audioMime = null;
     this.videoMime = null;
+  }
+
+  private applyTiming(mediaSource: MediaSource, manifest: PlaybackManifest): void {
+    const live = manifest.live;
+    if (live?.active) {
+      mediaSource.duration = Number.POSITIVE_INFINITY;
+      if (typeof mediaSource.setLiveSeekableRange === "function") {
+        mediaSource.setLiveSeekableRange(live.seekableStartMs / 1000, live.seekableEndMs / 1000);
+      }
+      return;
+    }
+    if (typeof mediaSource.clearLiveSeekableRange === "function") {
+      mediaSource.clearLiveSeekableRange();
+    }
+    mediaSource.duration = manifest.durationMs > 0 ? manifest.durationMs / 1000 : Number.NaN;
   }
 }
