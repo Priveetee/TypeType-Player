@@ -10,6 +10,9 @@ import {
 export type PlaybackResponse = {
   sessionId: string;
   videoId: string;
+  videoItag?: number;
+  audioItag?: number;
+  audioTrackId?: string | null;
   generation: number | null;
   ready: boolean;
   retryAfterMs: number | null;
@@ -53,9 +56,15 @@ function parsePlaybackResponse(value: unknown): PlaybackResponse {
   const sessionId = stringField(value, "sessionId");
   const videoId = stringField(value, "videoId");
   if (!sessionId || !videoId) throw new Error("Invalid playback response");
+  const videoItag = numberField(value, "videoItag");
+  const audioItag = numberField(value, "audioItag");
+  const hasAudioTrackId = "audioTrackId" in value;
   return {
     sessionId,
     videoId,
+    ...(videoItag === null ? {} : { videoItag }),
+    ...(audioItag === null ? {} : { audioItag }),
+    ...(hasAudioTrackId ? { audioTrackId: stringField(value, "audioTrackId") } : {}),
     generation: numberField(value, "generation"),
     ready: field(value, "ready") === true,
     retryAfterMs: numberField(value, "retryAfterMs"),

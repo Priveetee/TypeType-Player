@@ -10,6 +10,9 @@ test("creates live playback sessions and parses live timing", async () => {
       return {
         sessionId: "live-session",
         videoId: "X4VbdwhkE10",
+        videoItag: 248,
+        audioItag: 251,
+        audioTrackId: "fr-FR.4",
         generation: 0,
         ready: true,
         retryAfterMs: null,
@@ -42,6 +45,9 @@ test("creates live playback sessions and parses live timing", async () => {
   expect(requests[0]?.path).toContain("/sabr/playback/X4VbdwhkE10?");
   expect(requests[0]?.path).toContain("isLive=true");
   expect(requests[0]?.init?.method).toBe("POST");
+  expect(response.videoItag).toBe(248);
+  expect(response.audioItag).toBe(251);
+  expect(response.audioTrackId).toBe("fr-FR.4");
   expect(response.startTimeMs).toBe(3_590_000);
   expect(response.live).toMatchObject({ active: true, headSequence: 720 });
 });
