@@ -18,6 +18,7 @@ type Args = {
   startTimeMs: number;
   signal: AbortSignal;
   recovery: PlaybackRecovery;
+  beforeAttach?: () => Promise<void>;
 };
 
 type PlayerSessionDeps = {
@@ -50,10 +51,20 @@ export function loadPlayerSessionOnce(args: Args): Promise<LoadedSession> {
 
 function resolveSelection(args: Args): TrackSelection {
   return {
-    videoItag: args.quality?.videoItag ?? args.current?.videoItag ?? args.config.videoItag,
-    audioItag: args.quality?.audioItag ?? args.current?.audioItag ?? args.config.audioItag,
+    videoItag:
+      args.response.videoItag ??
+      args.quality?.videoItag ??
+      args.current?.videoItag ??
+      args.config.videoItag,
+    audioItag:
+      args.response.audioItag ??
+      args.quality?.audioItag ??
+      args.current?.audioItag ??
+      args.config.audioItag,
     audioTrackId:
-      args.quality?.audioTrackId ?? args.current?.audioTrackId ?? args.config.audioTrackId,
+      args.response.audioTrackId !== undefined
+        ? args.response.audioTrackId
+        : (args.quality?.audioTrackId ?? args.current?.audioTrackId ?? args.config.audioTrackId),
   };
 }
 
@@ -76,6 +87,7 @@ async function loadSelectedSession(
     startTimeMs: requestedStartTimeMs,
     policy: args.deps.policy,
     signal: args.signal,
+    ...(args.beforeAttach ? { beforeAttach: args.beforeAttach } : {}),
   });
   const startTimeMs =
     session.response.startTimeMs ?? session.manifest.startTimeMs ?? requestedStartTimeMs;

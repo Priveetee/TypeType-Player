@@ -211,7 +211,7 @@ import type {
     const revision = this.operation.next();
     const signal = this.operation.signal;
     const targetMs = Math.max(0, Math.round(positionMs));
-    this.deps.loop.stop();
+    if (!quality) this.deps.loop.stop();
     this.playerState.set("seeking");
     this.emitter.emit({ type: "seek", positionMs: targetMs });
     try {
@@ -276,8 +276,11 @@ import type {
     finalizePausedSeek = false,
     allowWindowRecovery = true,
   ): Promise<LoadedSession> {
-    await this.deps.loop.quiesce();
-    this.operation.ensureCurrent(this.destroyed, revision);
+    const quiesce = async () => {
+      await this.deps.loop.quiesce();
+      this.operation.ensureCurrent(this.destroyed, revision);
+    };
+    if (!quality) await quiesce();
     const load = allowWindowRecovery ? loadPlayerSession : loadPlayerSessionOnce;
     const session = await load({
       deps: this.deps,
@@ -289,6 +292,7 @@ import type {
       startTimeMs,
       signal,
       recovery: this.playbackRecovery,
+      ...(quality ? { beforeAttach: quiesce } : {}),
     });
     this.operation.ensureCurrent(this.destroyed, revision);
     const resolvedStartTimeMs =

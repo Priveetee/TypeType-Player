@@ -2,6 +2,7 @@ import type { BufferPolicy } from "./buffer-policy";
 import type { EventEmitter } from "./event-emitter";
 import type { MediaSourceController } from "./media-source-controller";
 import type { PlaybackClient } from "./playback-client";
+import { PlaybackLoopTaskController } from "./playback-loop-task-controller";
 import { currentTimeMs } from "./player-snapshot";
 import type { SegmentScheduler } from "./segment-scheduler";
 import type { LoadedSession } from "./session-loader";
@@ -31,6 +32,7 @@ export class PlaybackLoop {
   private fillTask: Promise<void> | null = null;
   private fillTaskRevision: number | null = null;
   private refreshTask: Promise<void> | null = null;
+  private taskController = new PlaybackLoopTaskController();
   private revision = 0;
 
   constructor(private readonly args: PlaybackLoopArgs) {}
@@ -50,6 +52,7 @@ export class PlaybackLoop {
 
   stop(): void {
     this.revision += 1;
+    this.taskController.stop();
     if (this.fillTimer) clearInterval(this.fillTimer);
     if (this.manifestTimer) clearInterval(this.manifestTimer);
     this.fillTimer = null;
@@ -67,12 +70,13 @@ export class PlaybackLoop {
   }
 
   fillOnce(revision = this.revision): Promise<void> {
+    if (revision !== this.revision) return Promise.resolve();
     if (this.fillTask) {
       return this.fillTaskRevision === revision ? this.fillTask : Promise.resolve();
     }
     const session = this.args.session();
     if (!session) return Promise.resolve();
-    const signal = this.args.signal();
+    const signal = this.taskController.signal(this.args.signal());
     const task = this.performFill(session, signal, revision);
     this.fillTask = task;
     this.fillTaskRevision = revision;
@@ -143,12 +147,17 @@ export class PlaybackLoop {
   private requestManifestRefresh(revision: number): void {
     const session = this.args.session();
     if (!session || revision !== this.revision || this.refreshTask) return;
-    const signal = this.args.signal();
+    const operationSignal = this.args.signal();
+    const signal = this.taskController.signal(operationSignal);
     const task = this.refreshManifest(session, signal);
     this.refreshTask = task;
     void task.catch((error: unknown) => {
       if (error instanceof DOMException && error.name === "AbortError") return;
-      this.fail(error, { sessionId: session.response.sessionId, signal }, revision);
+      this.fail(
+        error,
+        { sessionId: session.response.sessionId, signal: operationSignal },
+        revision,
+      );
     });
     const clear = () => {
       if (this.refreshTask === task) this.refreshTask = null;

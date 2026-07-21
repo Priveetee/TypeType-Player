@@ -27,6 +27,7 @@ type LoadSessionArgs = {
   startTimeMs: number;
   policy: BufferPolicy;
   signal: AbortSignal;
+  beforeAttach?: () => Promise<void>;
 };
 
 type PlaybackWindowRequestArgs = Pick<
@@ -88,6 +89,8 @@ async function attachSession(
   manifest: PlaybackManifest,
 ): Promise<LoadedSession> {
   if (!MediaSourceController.supported(manifest)) throw new Error("MSE codecs are not supported");
+  ensureNotAborted(args.signal);
+  await args.beforeAttach?.();
   ensureNotAborted(args.signal);
   args.scheduler.reset();
   await args.media.attach(manifest);
