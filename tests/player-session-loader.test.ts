@@ -3,7 +3,7 @@ import type { PlaybackManifest } from "../src/manifest";
 import type { PlaybackResponse } from "../src/playback-client";
 import type { PlaybackWindow, PlaybackWindowRequest } from "../src/playback-window";
 import { PlaybackRecovery } from "../src/player-recovery";
-import { loadPlayerSession } from "../src/player-session-loader";
+import { loadPlayerSession, loadPlayerSessionOnce } from "../src/player-session-loader";
 
 Object.defineProperty(globalThis, "MediaSource", {
   value: {
@@ -37,6 +37,7 @@ function response(sessionId: string, videoId = "V_YKnVyUJgQ"): PlaybackResponse 
 
 test("uses the server-resolved live start for the first window and buffer fill", async () => {
   const requestedPositions: number[] = [];
+  const requestedSelections: Array<[number, number, string | null]> = [];
   const filledWindows: Array<[number, number]> = [];
   const live = {
     active: true,
@@ -54,6 +55,7 @@ test("uses the server-resolved live start for the first window and buffer fill",
         create: async () => response("unused"),
         position: async (sessionId, request) => {
           requestedPositions.push(request.playerTimeMs);
+          requestedSelections.push([request.videoItag, request.audioItag, request.audioTrackId]);
           return { ...window(sessionId, request.generation, false), startTimeMs: 60_000, live };
         },
         prefetch: async (sessionId, request) => ({
@@ -93,7 +95,14 @@ test("uses the server-resolved live start for the first window and buffer fill",
       isLive: true,
     },
     video: { currentTime: 0 },
-    response: { ...response("live-session", "live-video"), startTimeMs: 60_000, live },
+    response: {
+      ...response("live-session", "live-video"),
+      videoItag: 248,
+      audioItag: 251,
+      audioTrackId: "fr-FR.4",
+      startTimeMs: 60_000,
+      live,
+    },
     current: null,
     quality: undefined,
     startTimeMs: 0,
@@ -102,9 +111,80 @@ test("uses the server-resolved live start for the first window and buffer fill",
   });
 
   expect(requestedPositions).toEqual([60_000]);
+  expect(requestedSelections).toEqual([[248, 251, "fr-FR.4"]]);
   expect(filledWindows).toEqual([[59_000, 90_000]]);
   expect(session.response.startTimeMs).toBe(60_000);
   expect(session.manifest.live?.active).toBe(true);
+});
+
+test("keeps current media active until a replacement window is ready", async () => {
+  let releasePrefetch: (() => void) | null = null;
+  let quiesced = false;
+  let attached = false;
+  const prefetchReady = new Promise<void>((resolve) => (releasePrefetch = resolve));
+  const task = loadPlayerSessionOnce({
+    deps: {
+      playback: {
+        create: async () => response("unused"),
+        position: async (sessionId, request) => window(sessionId, request.generation, false),
+        prefetch: async (sessionId, request) => {
+          await prefetchReady;
+          return window(sessionId, request.generation, true);
+        },
+        segments: async (sessionId, request) => ({
+          ...window(sessionId, request.generation, true),
+          manifest,
+        }),
+      },
+      media: {
+        attach: async () => {
+          expect(quiesced).toBe(true);
+          attached = true;
+        },
+        bufferedRanges: () => [],
+      },
+      scheduler: {
+        appendInit: async () => undefined,
+        fill: async () => undefined,
+        reset: () => undefined,
+      },
+      policy: {
+        bufferGoalMs: 30_000,
+        backBufferMs: 30_000,
+        pollIntervalMs: 500,
+        manifestRefreshMs: 8_000,
+        manifestPollLimit: 2,
+        segmentPollLimit: 2,
+      },
+    },
+    config: {
+      endpoint: "https://beta.typetype.video/api",
+      videoId: "V_YKnVyUJgQ",
+      videoItag: 137,
+      audioItag: 140,
+      audioTrackId: null,
+    },
+    video: { currentTime: 0 },
+    response: response("replacement"),
+    current: null,
+    quality: undefined,
+    startTimeMs: 0,
+    signal: new AbortController().signal,
+    recovery: new PlaybackRecovery(),
+    beforeAttach: async () => {
+      quiesced = true;
+    },
+  });
+
+  await Bun.sleep(0);
+  expect(quiesced).toBe(false);
+  expect(attached).toBe(false);
+  if (!releasePrefetch) throw new Error("Deferred prefetch was not initialized");
+  releasePrefetch();
+  await task;
+
+  expect(quiesced).toBe(true);
+  expect(attached).toBe(true);
 });
 
 test("recovers terminal seek windows with a fresh lower video itag session", async () => {
