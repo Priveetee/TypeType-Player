@@ -1,5 +1,6 @@
 import { AppendQueue } from "./append-queue";
 import type { ManifestTrack, PlaybackManifest } from "./manifest";
+import { createMediaSource, isMseTypeSupported } from "./media-source-runtime";
 import type { TrackKind } from "./types";
 
 export type MediaBufferedRange = {
@@ -9,13 +10,13 @@ export type MediaBufferedRange = {
 };
 
 type MediaSourcePlatform = {
-  create: () => MediaSource;
+  create: () => { managed: boolean; mediaSource: MediaSource };
   createObjectUrl: (mediaSource: MediaSource) => string;
   revokeObjectUrl: (url: string) => void;
 };
 
 const browserMediaSourcePlatform: MediaSourcePlatform = {
-  create: () => new MediaSource(),
+  create: () => createMediaSource(),
   createObjectUrl: (mediaSource) => URL.createObjectURL(mediaSource),
   revokeObjectUrl: (url) => URL.revokeObjectURL(url),
 };
@@ -27,6 +28,7 @@ export class MediaSourceController {
   private mediaSource: MediaSource | null = null;
   private audioMime: string | null = null;
   private videoMime: string | null = null;
+  private remotePlaybackPreference: boolean | null = null;
 
   constructor(
     private readonly video: HTMLVideoElement,
@@ -35,8 +37,8 @@ export class MediaSourceController {
 
   static supported(manifest: PlaybackManifest): boolean {
     return (
-      MediaSource.isTypeSupported(manifest.audio.mime) &&
-      (!manifest.video || MediaSource.isTypeSupported(manifest.video.mime))
+      isMseTypeSupported(manifest.audio.mime) &&
+      (!manifest.video || isMseTypeSupported(manifest.video.mime))
     );
   }
 
@@ -51,9 +53,10 @@ export class MediaSourceController {
   }
 
   private async attachNewMediaSource(manifest: PlaybackManifest): Promise<void> {
-    const mediaSource = this.platform.create();
+    const { managed, mediaSource } = this.platform.create();
     this.mediaSource = mediaSource;
     this.objectUrl = this.platform.createObjectUrl(mediaSource);
+    this.configureRemotePlayback(managed);
     this.video.src = this.objectUrl;
     await new Promise<void>((resolve, reject) => {
       const sourceOpen = () => resolve();
@@ -151,6 +154,7 @@ export class MediaSourceController {
     }
     if (this.objectUrl) this.platform.revokeObjectUrl(this.objectUrl);
     this.objectUrl = null;
+    this.restoreRemotePlayback();
   }
 
   track(kind: TrackKind, manifest: PlaybackManifest): ManifestTrack | null {
@@ -178,6 +182,19 @@ export class MediaSourceController {
     this.videoQueue = null;
     this.audioMime = null;
     this.videoMime = null;
+  }
+
+  private configureRemotePlayback(managed: boolean): void {
+    if (!managed || this.remotePlaybackPreference !== null) return;
+    this.remotePlaybackPreference = this.video.disableRemotePlayback;
+    this.video.disableRemotePlayback = true;
+  }
+
+  private restoreRemotePlayback(): void {
+    const preference = this.remotePlaybackPreference;
+    if (preference === null) return;
+    this.video.disableRemotePlayback = preference;
+    this.remotePlaybackPreference = null;
   }
 
   private applyTiming(mediaSource: MediaSource, manifest: PlaybackManifest): void {

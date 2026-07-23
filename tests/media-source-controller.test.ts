@@ -100,7 +100,10 @@ test("attach releases each old layout before repeated track changes", async () =
       const mediaSource = new FakeMediaSource("closed");
       replacements.push(mediaSource);
       queueMicrotask(() => mediaSource.open());
-      return mediaSource as unknown as MediaSource;
+      return {
+        managed: false,
+        mediaSource: mediaSource as unknown as MediaSource,
+      };
     },
     createObjectUrl: () => `blob:replacement-${replacements.length}`,
     revokeObjectUrl: () => undefined,
@@ -121,6 +124,29 @@ test("attach releases each old layout before repeated track changes", async () =
     expect(replacement.removed.length).toBeGreaterThan(0);
   }
   expect(video.src).toBe("blob:replacement-6");
+});
+
+test("ManagedMediaSource disables remote playback only while attached", async () => {
+  const mediaSource = new FakeMediaSource("closed");
+  const { video } = videoElement("");
+  video.disableRemotePlayback = false;
+  const controller = new MediaSourceController(video, {
+    create: () => {
+      queueMicrotask(() => mediaSource.open());
+      return {
+        managed: true,
+        mediaSource: mediaSource as unknown as MediaSource,
+      };
+    },
+    createObjectUrl: () => "blob:managed",
+    revokeObjectUrl: () => undefined,
+  });
+
+  await controller.attach(manifest(true));
+  expect(video.disableRemotePlayback).toBe(true);
+
+  controller.detach();
+  expect(video.disableRemotePlayback).toBe(false);
 });
 
 test("updates the MSE live seekable range as the live head advances", () => {
