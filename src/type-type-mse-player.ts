@@ -1,7 +1,12 @@
 import { decodeStartMs, runDecodePreroll } from "./decode-preroll";
 import { EventEmitter } from "./event-emitter";
 import { LiveEdgeFollower } from "./live-edge-follower";
+import { seekWithinBufferedMedia } from "./media-buffer";
 import { PlaybackIntent } from "./playback-intent";
+import {
+  browserPlaybackLifecycleTargets,
+  observePlaybackLifecycle,
+} from "./playback-lifecycle-observer";
 import type { PlaybackLoopFailureContext } from "./playback-loop";
 import { createPlayerDeps, type PlayerDeps } from "./player-deps";
 import { emitManifest, emitQuality } from "./player-events";
@@ -31,6 +36,7 @@ import type {
   private readonly playbackRecovery = new PlaybackRecovery();
   private readonly transientMediaState: TransientMediaState;
   private readonly stopPageSuspensionObserver: () => void;
+  private readonly stopPlaybackLifecycleObserver: () => void;
   private readonly liveEdgeFollower: LiveEdgeFollower;
   private session: LoadedSession | null = null;
   private pendingPrerollTargetMs: number | null = null;
@@ -69,6 +75,10 @@ import type {
       },
       loopError: (error, context) => this.handlePlaybackLoopError(error, context),
     });
+    this.stopPlaybackLifecycleObserver = observePlaybackLifecycle(
+      () => this.deps.loop.wake(),
+      browserPlaybackLifecycleTargets(video),
+    );
     this.deps.mediaEvents.start();
   }
   /** Subscribes to player events. */ on(
@@ -140,6 +150,16 @@ import type {
     const targetMs = Math.max(0, Math.round(positionMs));
     this.liveEdgeFollower.observeUserSeek(targetMs, this.session?.manifest.live);
     this.recoveryPositionMs = targetMs;
+    if (
+      this.session &&
+      this.playerState.value !== "loading" &&
+      this.playerState.value !== "seeking" &&
+      seekWithinBufferedMedia(this.video, targetMs)
+    ) {
+      this.emitter.emit({ type: "seek", positionMs: targetMs });
+      this.deps.loop.wake();
+      return;
+    }
     return this.seekController.seek(
       targetMs,
       `seek:${targetMs}`,
@@ -205,6 +225,7 @@ import type {
     this.operation.abort();
     this.transientMediaState.restore();
     this.stopPageSuspensionObserver();
+    this.stopPlaybackLifecycleObserver();
     this.seekController.reset();
     this.pendingPrerollTargetMs = null;
     this.deps.destroy();

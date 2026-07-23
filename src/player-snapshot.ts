@@ -1,3 +1,4 @@
+import { bufferedEndAtCurrentTime } from "./media-buffer";
 import type { LoadedSession } from "./session-loader";
 import type { TypeTypeMseState } from "./types";
 
@@ -25,9 +26,7 @@ export function createSnapshot(
 }
 
 export function bufferedEndMs(video: HTMLVideoElement): number {
-  const buffered = video.buffered;
-  if (buffered.length === 0) return 0;
-  return Math.round(buffered.end(buffered.length - 1) * 1000);
+  return bufferedEndAtCurrentTime(video);
 }
 
 export function currentTimeMs(video: { currentTime: number }): number {

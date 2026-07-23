@@ -40,10 +40,7 @@ export class PlaybackLoop {
   start(): void {
     this.stop();
     const revision = this.revision;
-    this.fillTimer = setInterval(() => {
-      const context = this.failureContext();
-      void this.fillOnce(revision).catch((error) => this.fail(error, context, revision));
-    }, this.args.policy.pollIntervalMs);
+    this.fillTimer = setInterval(() => this.requestFill(revision), this.args.policy.pollIntervalMs);
     this.manifestTimer = setInterval(
       () => this.requestManifestRefreshIfNeeded(revision),
       this.args.policy.manifestRefreshMs,
@@ -67,6 +64,10 @@ export class PlaybackLoop {
       );
       await Promise.allSettled(tasks);
     }
+  }
+
+  wake(): void {
+    this.requestFill(this.revision);
   }
 
   fillOnce(revision = this.revision): Promise<void> {
@@ -129,6 +130,11 @@ export class PlaybackLoop {
       this.stop();
       return;
     }
+  }
+
+  private requestFill(revision: number): void {
+    const context = this.failureContext();
+    void this.fillOnce(revision).catch((error) => this.fail(error, context, revision));
   }
 
   private async refreshManifest(session: LoadedSession, signal: AbortSignal): Promise<void> {
