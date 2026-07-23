@@ -1,0 +1,76 @@
+import { expect, test } from "bun:test";
+import { observePageSuspension, TransientMediaState } from "../src/transient-media-state";
+
+test("restores the media element after a temporary override", () => {
+  const video = videoElement();
+  const state = new TransientMediaState(video);
+
+  const restore = state.begin();
+  expect(state.active).toBe(true);
+  expect(video.muted).toBe(true);
+  expect(video.playbackRate).toBe(16);
+  expect(video.autoplay).toBe(true);
+
+  restore();
+  expect(state.active).toBe(false);
+  expect(video.muted).toBe(false);
+  expect(video.playbackRate).toBe(1.25);
+  expect(video.autoplay).toBe(false);
+});
+
+test("an obsolete owner cannot restore a newer override", () => {
+  const video = videoElement();
+  const state = new TransientMediaState(video);
+  const restoreFirst = state.begin();
+  const restoreSecond = state.begin();
+
+  restoreFirst();
+  expect(state.active).toBe(true);
+  expect(video.playbackRate).toBe(16);
+
+  restoreSecond();
+  expect(state.active).toBe(false);
+  expect(video.playbackRate).toBe(1.25);
+});
+
+test("pagehide and freeze restore temporary state synchronously", () => {
+  for (const eventType of ["pagehide", "freeze"]) {
+    const page = new EventTarget();
+    const document = new EventTarget();
+    const video = videoElement();
+    const state = new TransientMediaState(video);
+    const stop = observePageSuspension(() => state.restore(), {
+      document,
+      window: page,
+    });
+    state.begin();
+
+    (eventType === "pagehide" ? page : document).dispatchEvent(new Event(eventType));
+
+    expect(state.active).toBe(false);
+    expect(video.muted).toBe(false);
+    expect(video.playbackRate).toBe(1.25);
+    stop();
+  }
+});
+
+test("removed lifecycle observers no longer restore state", () => {
+  const page = new EventTarget();
+  const video = videoElement();
+  const state = new TransientMediaState(video);
+  const stop = observePageSuspension(() => state.restore(), { window: page });
+  stop();
+  state.begin();
+
+  page.dispatchEvent(new Event("pagehide"));
+
+  expect(state.active).toBe(true);
+});
+
+function videoElement(): HTMLVideoElement {
+  return {
+    autoplay: false,
+    muted: false,
+    playbackRate: 1.25,
+  } as HTMLVideoElement;
+}

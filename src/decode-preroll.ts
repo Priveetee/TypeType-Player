@@ -1,6 +1,6 @@
 import type { PlaybackManifest } from "./manifest";
+import { TransientMediaState } from "./transient-media-state";
 
-const PREROLL_RATE = 16;
 const TARGET_TOLERANCE_MS = 80;
 const TARGET_BOUNDARY_TOLERANCE_MS = 1;
 const HAVE_CURRENT_DATA = 2;
@@ -27,6 +27,7 @@ export async function runDecodePreroll(
   resumePlayback: boolean,
   signal: AbortSignal,
   requireFrame = false,
+  transientState = new TransientMediaState(video),
 ): Promise<void> {
   ensureNotAborted(signal);
   const targetReached = video.currentTime * 1000 >= targetMs - TARGET_TOLERANCE_MS;
@@ -41,12 +42,7 @@ export async function runDecodePreroll(
     }
     return;
   }
-  const muted = video.muted;
-  const playbackRate = video.playbackRate;
-  const autoplay = video.autoplay;
-  video.muted = true;
-  video.playbackRate = PREROLL_RATE;
-  video.autoplay = true;
+  const restoreMediaState = transientState.begin();
   let pausedForSnap = false;
   try {
     await video.play();
@@ -57,9 +53,7 @@ export async function runDecodePreroll(
       await snapToTarget(video, targetMs, signal);
     }
   } finally {
-    video.playbackRate = playbackRate;
-    video.muted = muted;
-    video.autoplay = autoplay;
+    restoreMediaState();
     if (!resumePlayback) {
       if (!pausedForSnap) video.pause();
     } else if (!signal.aborted) {

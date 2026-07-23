@@ -13,6 +13,7 @@ import { PlayerState } from "./player-state";
 import { SeekController } from "./seek-controller";
 import { type LoadedSession, PlaybackWindowRecoveryError } from "./session-loader";
 import { shouldApplySessionPosition } from "./session-position";
+import { observePageSuspension, TransientMediaState } from "./transient-media-state";
 import type {
   TypeTypeMseConfig,
   TypeTypeMseEventType,
@@ -28,6 +29,8 @@ import type {
   private readonly seekController = new SeekController();
   private readonly operation = new PlayerOperation();
   private readonly playbackRecovery = new PlaybackRecovery();
+  private readonly transientMediaState: TransientMediaState;
+  private readonly stopPageSuspensionObserver: () => void;
   private readonly liveEdgeFollower: LiveEdgeFollower;
   private session: LoadedSession | null = null;
   private pendingPrerollTargetMs: number | null = null;
@@ -47,6 +50,10 @@ import type {
     this.audioOnly = config.audioOnly === true;
     this.recoveryPositionMs = Math.max(0, Math.round(config.startTimeMs ?? 0));
     this.liveEdgeFollower = new LiveEdgeFollower(config.isLive === true);
+    this.transientMediaState = new TransientMediaState(video);
+    this.stopPageSuspensionObserver = observePageSuspension(() =>
+      this.transientMediaState.restore(),
+    );
     this.deps = createPlayerDeps({
       video,
       config,
@@ -113,7 +120,7 @@ import type {
     if (!this.session || this.playerState.value === "loading") return;
     if (this.pendingPrerollTargetMs !== null) {
       const targetMs = this.pendingPrerollTargetMs;
-      await runDecodePreroll(this.video, targetMs, true, this.operation.signal);
+      await this.runDecodePreroll(targetMs, true, this.operation.signal);
       this.pendingPrerollTargetMs = null;
       this.playerState.set("playing");
       return;
@@ -186,11 +193,18 @@ import type {
     return createSnapshot(this.video, this.playerState.value, this.session);
   }
 
+  /** Reports whether Player is temporarily changing media element preferences. */
+  isApplyingTransientMediaState(): boolean {
+    return this.transientMediaState.active;
+  }
+
   /** Aborts pending work and releases all media and event resources. */
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
     this.operation.abort();
+    this.transientMediaState.restore();
+    this.stopPageSuspensionObserver();
     this.seekController.reset();
     this.pendingPrerollTargetMs = null;
     this.deps.destroy();
@@ -307,11 +321,11 @@ import type {
     this.operation.ensureCurrent(this.destroyed, revision);
     if (resolvedStartTimeMs > startMs) {
       if (this.playbackIntent.shouldResume) {
-        await runDecodePreroll(this.video, resolvedStartTimeMs, true, signal);
+        await this.runDecodePreroll(resolvedStartTimeMs, true, signal);
         this.pendingPrerollTargetMs = null;
       } else {
         if (finalizePausedSeek) {
-          await runDecodePreroll(this.video, resolvedStartTimeMs, false, signal, true);
+          await this.runDecodePreroll(resolvedStartTimeMs, false, signal, true);
           this.pendingPrerollTargetMs = null;
         } else {
           this.pendingPrerollTargetMs = resolvedStartTimeMs;
@@ -320,11 +334,11 @@ import type {
     } else if (this.playbackIntent.shouldResume) {
       this.pendingPrerollTargetMs = null;
       if (resolvedStartTimeMs > 0) {
-        await runDecodePreroll(this.video, resolvedStartTimeMs, false, signal, true);
+        await this.runDecodePreroll(resolvedStartTimeMs, false, signal, true);
       }
       await this.video.play();
     } else if (finalizePausedSeek && resolvedStartTimeMs > 0) {
-      await runDecodePreroll(this.video, resolvedStartTimeMs, false, signal, true);
+      await this.runDecodePreroll(resolvedStartTimeMs, false, signal, true);
       this.pendingPrerollTargetMs = null;
     } else {
       this.pendingPrerollTargetMs = null;
@@ -336,6 +350,23 @@ import type {
     emitManifest(this.emitter, session.response, session);
     this.playerState.set(this.video.paused ? "ready" : "playing");
     return session;
+  }
+
+  /** Applies a bounded decode preroll using the player-owned media override. */
+  private runDecodePreroll(
+    targetMs: number,
+    resumePlayback: boolean,
+    signal: AbortSignal,
+    requireFrame = false,
+  ): Promise<void> {
+    return runDecodePreroll(
+      this.video,
+      targetMs,
+      resumePlayback,
+      signal,
+      requireFrame,
+      this.transientMediaState,
+    );
   }
 
   /** Recovers terminal playback windows within the bounded fresh-session budget. */
